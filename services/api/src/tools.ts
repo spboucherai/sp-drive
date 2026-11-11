@@ -116,8 +116,21 @@ export async function sipsJpeg(work: string, input: string, output: string, max:
   if (r.code !== 0 || !(await exists(output))) throw new ToolError('convert_failed', `image conversion failed: ${(r.stderr || r.stdout).trim().slice(0, 200)}`);
 }
 /** Office document → PDF with LibreOffice: throw-away profile inside the work directory, macros never run headless. */
+let officeProbe: { at: number; ok: boolean } | undefined;
+/**
+ * Can LibreOffice start at all? On a Mac where it was never opened, macOS holds the process until someone approves the
+ * first launch on screen; a headless node then hangs for ever. One short probe (cached ten minutes) keeps a blocked
+ * converter from stalling the job queue for the full conversion time-out on every document.
+ */
+export async function officeAvailable(): Promise<boolean> {
+  if (officeProbe && Date.now() - officeProbe.at < 10 * 60_000) return officeProbe.ok;
+  let ok = false;
+  if (await exists(config.soffice)) ok = await withWorkDir((w) => runSandboxed(w, config.soffice, ['--version'], { timeoutMs: 20_000 }).then((r) => r.code === 0 && /LibreOffice/i.test(r.stdout), () => false));
+  officeProbe = { at: Date.now(), ok };
+  return ok;
+}
 export async function officeToPdf(work: string, input: string): Promise<string> {
-  if (!(await exists(config.soffice))) throw new ToolError('converter_missing', 'the document converter is not installed');
+  if (!(await officeAvailable())) throw new ToolError('converter_unavailable', 'the document converter is not available on this server');
   const r = await runSandboxed(work, config.soffice, [`-env:UserInstallation=file://${join(work, 'lo-profile')}`, '--headless', '--norestore', '--nolockcheck', '--nodefault', '--nofirststartwizard',
     '--convert-to', 'pdf', '--outdir', join(work, 'out'), input]);
   const out = join(work, 'out', `${input.split('/').pop()!.replace(/\.[^.]*$/, '')}.pdf`);
