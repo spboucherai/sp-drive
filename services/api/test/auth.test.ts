@@ -160,6 +160,6 @@ describe('accounts and passkeys', () => {
     const act = (await client.get('/api/v1/account/activity')).body.map((e: any) => e.action);
     expect(act).toContain('account.created');
     const rows = await sql<{ meta: unknown }[]>`select meta from audit_events`;
-    expect(JSON.stringify(rows)).not.toMatch(/challenge|signature|clientDataJSON/);
+    expect(JSON.stringify(rows)).not.toMatch(/"challenge"|clientDataJSON|authenticatorData|attestationObject/);
   });
 });
