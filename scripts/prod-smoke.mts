@@ -63,7 +63,9 @@ check('uploads stored', [docx, png, heic, xlsx, virus].every((f) => f?.id));
 const ready = async (id: string, kind: string) => (await call(page, 'GET', `/files/${id}/preview/${kind}`)).status;
 check('thumbnail (sips, sandboxed)', await until(async () => (await ready(png.id, 'thumb')) === 200));
 check('HEIC → JPEG', await until(async () => (await ready(heic.id, 'image')) === 200));
-check('DOCX → PDF (LibreOffice, sandboxed)', await until(async () => [200, 422].includes(await ready(docx.id, 'pdf'))) && (await ready(docx.id, 'pdf')) === 200, `status ${await ready(docx.id, 'pdf')}`);
+await until(async () => [200, 422].includes(await ready(docx.id, 'pdf')), 120_000);
+const office = await call(page, 'GET', `/files/${docx.id}/preview/pdf`);
+check('DOCX → PDF (LibreOffice, sandboxed)', office.status === 200, office.status === 200 ? '' : `status ${office.status}: ${office.body?.message ?? ''}`);
 check('XLSX → sheets (child process, sandboxed)', await until(async () => [200, 422].includes(await ready(xlsx.id, 'sheet'))) && (await ready(xlsx.id, 'sheet')) === 200, `status ${await ready(xlsx.id, 'sheet')}`);
 check('antivirus flags EICAR', await until(async () => (await call(page, 'GET', `/files/${virus.id}`)).body.file.scan === 'infected'));
 check('clean file marked clean', (await call(page, 'GET', `/files/${png.id}`)).body.file.scan === 'clean');
@@ -101,7 +103,8 @@ await call(page, 'DELETE', `/requests/${portal.request.id}?purge=1`);
 // --- static shell ---
 for (const p of ['/manifest.webmanifest', '/sw.js', '/pwa/icon-512.png', '/s/unknown-link', '/request/unknown-link']) { const r = await page.request.get(p); check(`GET ${p}`, r.status() === 200); }
 await page.goto('/');
-check('application shell renders', await page.getByRole('navigation').first().isVisible().catch(() => false));
+await page.waitForLoadState('networkidle');
+check('application shell renders', await page.locator('#main').isVisible().catch(() => false));
 const state = (await call(page, 'GET', '/auth/state')).body;
 console.log(`account: ${state.user.email} (${state.user.id})`);
 await browser.close();

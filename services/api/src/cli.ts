@@ -52,6 +52,25 @@ const commands: Record<string, () => Promise<void>> = {
     });
     console.log(`one recovery code for ${email}: ${code}`);
   },
+  /** Delete an account with everything it owns (files, links, portals, stored objects). Irreversible. Requires --yes-delete. */
+  async 'delete-account'() {
+    const email = flag('email');
+    const [u] = await sql<{ id: string }[]>`select id from users where email = ${email ?? ''}`;
+    if (!u) { console.error('unknown account'); process.exitCode = 1; return; }
+    if (!args.includes('--yes-delete')) { console.error('refused: this permanently deletes the account and all its files; add --yes-delete'); process.exitCode = 2; return; }
+    const keys = await sql.begin(async (t) => {
+      const k = await t<{ storage_key: string }[]>`select storage_key from storage_objects where owner_id = ${u.id}
+        union all select p.storage_key from previews p join storage_objects o on o.id = p.object_id where o.owner_id = ${u.id} and p.storage_key is not null`;
+      await t`delete from files where owner_id = ${u.id}`;
+      await t`delete from folders where owner_id = ${u.id}`;
+      await t`delete from storage_objects where owner_id = ${u.id}`;
+      await t`delete from users where id = ${u.id}`;
+      await t`insert into audit_events (actor_kind, action, target_type, target_id) values ('system', 'account.deleted', 'user', ${u.id})`;
+      return k.map((r) => r.storage_key);
+    });
+    for (const k of keys) await driver.remove(k);
+    console.log(`account ${email} deleted, ${keys.length} stored objects removed`);
+  },
   /** Re-wrap every data key under a new master key (files are not rewritten). The new key file replaces the old one after success. */
   async 'rotate-master-key'() {
     const next = randomBytes(32), old = masterKey();
