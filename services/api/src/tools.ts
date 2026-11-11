@@ -1,6 +1,6 @@
 // External helpers the worker relies on: the antivirus daemon, sandboxed converters, archive inspection.
 import { spawn } from 'node:child_process';
-import { createReadStream } from 'node:fs';
+import { createReadStream, realpathSync } from 'node:fs';
 import { mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { connect } from 'node:net';
 import { homedir } from 'node:os';
@@ -63,11 +63,22 @@ export function clamdScan(src: Readable, size: number): Promise<ScanResult> {
 // macOS seatbelt profile: no network, no access to the home directory (keys, database socket, other users' data), writes
 // only inside the job's own work directory. The tool sees one decrypted input file and nothing else of the drive.
 const sbString = (s: string) => `"${s.replace(/["\\]/g, '\\$&')}"`;
-const profile = (work: string) => `(version 1)(allow default)(deny network*)
-(deny file-read* file-write* (subpath ${sbString(homedir())}))(deny file-read* file-write* (subpath ${sbString(config.dataDir)}))
-(deny file-write*)(allow file-write* (subpath ${sbString(work)}) (subpath "/dev") (subpath "/private/var/folders") (subpath "/private/tmp"))
-(allow file-read* (subpath ${sbString(work)}) (subpath ${sbString(config.appDir)}))
-(allow file-read-metadata (subpath ${sbString(homedir())}) (subpath ${sbString(config.dataDir)}))`;
+/** Seatbelt matches resolved paths (/tmp is /private/tmp): every path in the profile is made real first. */
+const real = (p: string) => { try { return realpathSync(p); } catch { return p; } };
+const profile = (work: string) => {
+  const home = sbString(real(homedir())), data = sbString(real(config.dataDir)), w = sbString(real(work)), app = sbString(real(config.appDir));
+  const keyDir = sbString(real(dirname(config.masterKeyFile))), key = sbString(real(config.masterKeyFile));
+  // no network at all, except LibreOffice's own instance pipe (a Unix socket named OSL_PIPE_*): the database and antivirus sockets stay out of reach
+  return `(version 1)(allow default)(deny network*)
+(allow network* (local unix-socket (regex #"^/private/tmp/OSL_PIPE_")))(allow network* (remote unix-socket (regex #"^/private/tmp/OSL_PIPE_")))
+(deny file-read* file-write* (subpath ${home}) (subpath ${data}) (literal ${key}))
+(deny file-write*)(allow file-write* (subpath ${w}) (subpath "/dev") (subpath "/private/var/folders") (subpath "/private/tmp"))
+(deny file-write* (subpath ${data}) (subpath ${keyDir}))
+(allow file-read* file-write* (subpath ${w}))
+(allow file-read* (subpath ${app}))
+(allow file-read-metadata (subpath ${home}) (subpath ${data}))
+(deny file-read* file-write* (literal ${key}))`;
+};
 
 export class ToolError extends Error { constructor(public code: string, message: string) { super(message); } }
 export interface RunResult { code: number | null; stdout: string; stderr: string }
@@ -190,7 +201,7 @@ export async function sheetPreview(work: string, input: string): Promise<SheetPr
   const out = join(work, 'sheet.json');
   // production: the bundled child next to the worker bundle; development and tests: the TypeScript source through tsx
   const self = fileURLToPath(import.meta.url);
-  const child = self.endsWith('.ts') ? ['--import', 'tsx', join(dirname(self), 'sheet-child.ts')] : [join(dirname(self), 'sheet-child.mjs')];
+  const child = self.endsWith('.ts') ? ['--import', import.meta.resolve('tsx'), join(dirname(self), 'sheet-child.ts')] : [join(dirname(self), 'sheet-child.mjs')];
   const r = await runSandboxed(work, process.execPath, ['--max-old-space-size=768', ...child, input, out], { timeoutMs: 60_000 });
   if (r.code !== 0 || !(await exists(out))) throw new ToolError('convert_failed', `the workbook could not be read: ${r.stderr.trim().split('\n').pop()?.slice(0, 200) ?? `exit ${r.code}`}`);
   return JSON.parse(await readFile(out, 'utf8')) as SheetPreview;

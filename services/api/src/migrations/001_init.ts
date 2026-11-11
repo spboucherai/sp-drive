@@ -265,6 +265,7 @@ create index upload_submissions_request on upload_submissions (request_id, creat
 create table upload_items (
   id uuid primary key default gen_random_uuid(),
   submission_id uuid not null references upload_submissions on delete cascade,
+  position int not null default 0,
   original_name text not null,
   safe_name text not null,
   declared_size bigint not null,

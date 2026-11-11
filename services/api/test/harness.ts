@@ -16,7 +16,11 @@ export async function server(): Promise<FastifyInstance> {
 export async function closeAll(): Promise<void> { await app?.close(); app = undefined; await sql.end({ timeout: 5 }); }
 /** Run every queued job to completion (scans, previews, submissions, garbage collection), including delayed ones. */
 export async function work(): Promise<void> {
-  for (let i = 0; i < 50; i++) { await sql`update jobs set run_at = now() where status = 'queued'`; if ((await drain(handlers)) === 0) return; }
+  await sql`update jobs set run_at = now() where status = 'queued'`; // jobs waiting for a retry get one more try
+  for (let i = 0; i < 50; i++) {
+    if ((await drain(handlers)) === 0) return;
+    await sql`update jobs set run_at = now() where status = 'queued' and attempts = 0`; // jobs created by the jobs that just ran
+  }
 }
 
 export interface Res<T = any> { status: number; body: T; headers: Record<string, any>; raw: Buffer }
@@ -68,7 +72,9 @@ export class Client {
   }
 }
 export const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
-export const anon = () => new Client();
+let ipSeq = 0;
+/** An anonymous visitor on its own address (the per-address rate limits stay active in tests, visitors just do not share one). */
+export const anon = () => { const c = new Client(); ipSeq++; c.ip = `10.${100 + Math.floor(ipSeq / 60000)}.${Math.floor(ipSeq / 250) % 250}.${1 + (ipSeq % 250)}`; return c; };
 
 let n = 0;
 /** Create an account through the real invitation + passkey registration flow. */

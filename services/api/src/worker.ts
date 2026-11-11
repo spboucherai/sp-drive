@@ -112,7 +112,7 @@ const processSubmission: Handler = async (p) => {
   if (!sub || sub.status !== 'processing') return;
   const [portal] = await sql<RequestRow[]>`select * from upload_requests where id = ${sub.request_id}`;
   if (!portal) return;
-  const items = await sql<ItemRow[]>`select *, size::text from upload_items where submission_id = ${subId} and status = 'quarantined' order by created_at, id`;
+  const items = await sql<ItemRow[]>`select *, size::text from upload_items where submission_id = ${subId} and status = 'quarantined' order by position, id`;
   const reject = async (i: ItemRow, code: string, meta: Record<string, unknown> = {}) => {
     await rm(i.quarantine_path, { force: true });
     await sql`update upload_items set status = 'rejected', reject_code = ${code}, quarantine_path = null, updated_at = now() where id = ${i.id}`;

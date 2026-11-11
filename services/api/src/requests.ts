@@ -68,7 +68,7 @@ export function requestRoutes(app: FastifyInstance): void {
 
   // ============================ owner side ============================
   app.get('/api/v1/requests', authed, async (req) => {
-    const rows = await sql<(RequestRow & { folder_name: string })[]>`select ${withState(sql)}, d.name as folder_name where r.owner_id = ${userOf(req).id} order by r.created_at desc limit 1000`;
+    const rows = await sql<(RequestRow & { folder_name: string })[]>`select d.name as folder_name, ${withState(sql)} where r.owner_id = ${userOf(req).id} order by r.created_at desc limit 1000`;
     return rows.map((r) => ({ ...requestJson(r), folderName: r.folder_name }));
   });
   app.post('/api/v1/requests', authed, async (req) => {
@@ -152,7 +152,7 @@ export function requestRoutes(app: FastifyInstance): void {
     if (!s) throw notFound('submission not found');
     const [items, events] = await Promise.all([
       sql<{ id: string; original_name: string; safe_name: string; size: string | null; declared_size: string; sha256: string | null; detected_mime: string | null; status: string; reject_code: string | null; file_id: string | null }[]>`
-        select id, original_name, safe_name, size::text, declared_size::text, sha256, detected_mime, status, reject_code, file_id from upload_items where submission_id = ${id} order by created_at, id`,
+        select id, original_name, safe_name, size::text, declared_size::text, sha256, detected_mime, status, reject_code, file_id from upload_items where submission_id = ${id} order by position, id`,
       sql<{ id: string; at: Date; action: string; meta: unknown }[]>`select id::text, at, action, meta from audit_events where target_type = 'submission' and target_id = ${id} order by at, id`,
     ]);
     return {
@@ -245,7 +245,7 @@ export function requestRoutes(app: FastifyInstance): void {
         if (file.size > Number(r.max_file_bytes)) throw bad('file_too_large', 'a file exceeds the maximum size', { name: safe, max: Number(r.max_file_bytes) });
         for (let i = 2; names.has(safe.toLowerCase()); i++) safe = sanitizeName(file.name.replace(/(\.[^.]*)?$/, ` (${i})$1`));
         names.add(safe.toLowerCase());
-        return { original: file.name.slice(0, 500), safe, size: file.size };
+        return { original: file.name.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 500), safe, size: file.size };
       });
       const declared = items.reduce((n, i) => n + i.size, 0);
       // --- limits: per address, per portal, per owner ---
@@ -260,8 +260,8 @@ export function requestRoutes(app: FastifyInstance): void {
         values (${r.id}, ${publicRef()}, ${tokenHash(submissionToken)}, 'open', ${b.name}, ${b.email}, ${b.reference}, ${t.json(meta)}, ${r.require_consent ? new Date() : null}, ${declared}, ${req.ip}, ${actor.userAgent?.slice(0, 300) ?? ''})
         returning id, public_ref`;
       const outItems = [];
-      for (const i of items) {
-        const [item] = await t<{ id: string }[]>`insert into upload_items (submission_id, original_name, safe_name, declared_size, status) values (${s!.id}, ${i.original}, ${i.safe}, ${i.size}, 'uploading') returning id`;
+      for (const [position, i] of items.entries()) {
+        const [item] = await t<{ id: string }[]>`insert into upload_items (submission_id, position, original_name, safe_name, declared_size, status) values (${s!.id}, ${position}, ${i.original}, ${i.safe}, ${i.size}, 'uploading') returning id`;
         const [up] = await t<{ id: string }[]>`insert into uploads (owner_id, item_id, name, size, expires_at) values (${r.owner_id}, ${item!.id}, ${i.safe}, ${i.size}, now() + interval '24 hours') returning id`;
         outItems.push({ uploadId: up!.id, name: i.safe, size: i.size });
       }
@@ -321,7 +321,7 @@ export function requestRoutes(app: FastifyInstance): void {
   /** What a depositor may know afterwards: the state of their own submission, file by file. */
   app.get('/api/v1/public/submissions/status', limited(120), async (req) => {
     const { sub, portal } = await submissionOf(sql, req, false);
-    const items = await sql<{ safe_name: string; status: string; reject_code: string | null }[]>`select safe_name, status, reject_code from upload_items where submission_id = ${sub.id} order by created_at, id`;
+    const items = await sql<{ safe_name: string; status: string; reject_code: string | null }[]>`select safe_name, status, reject_code from upload_items where submission_id = ${sub.id} order by position, id`;
     return { ref: sub.public_ref, status: sub.status, confirmationMessage: sub.status === 'completed' ? portal.confirmation_message : '',
       items: items.map((i) => ({ name: i.safe_name, status: i.status === 'placed' ? 'accepted' : i.status === 'rejected' ? 'rejected' : 'pending', reason: i.reject_code })) };
   });

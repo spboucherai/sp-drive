@@ -48,6 +48,8 @@ export async function buildServer(o: { logger?: boolean } = {}): Promise<Fastify
   app.setErrorHandler((err: Error & { statusCode?: number; validation?: unknown; code?: string }, req, reply) => {
     if (err instanceof UserError) return reply.code(err.status).send({ error: err.code, message: err.message, ...err.extra });
     if (err instanceof z.ZodError) return reply.code(400).send({ error: 'invalid_request', message: 'invalid request', issues: err.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) });
+    // text PostgreSQL cannot store (NUL bytes, broken encodings) is the caller's mistake, not ours
+    if (err.code === '22021' || err.code === '22P05') return reply.code(400).send({ error: 'invalid_request', message: 'invalid characters in request' });
     const status = err.statusCode && err.statusCode >= 400 && err.statusCode < 500 ? err.statusCode : 500;
     if (status === 500) req.log.error({ err: { message: err.message, stack: err.stack, code: err.code } }, 'unhandled error');
     return reply.code(status).send({ error: status === 500 ? 'internal' : status === 413 ? 'too_large' : 'bad_request', message: status === 500 ? 'internal error' : err.message });
