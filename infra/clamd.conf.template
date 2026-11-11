@@ -1,0 +1,16 @@
+# clamd for SP Drive — rendered by scripts/node-setup.sh ({{DATA}} = ~/sp-drive-data, {{DB}} = signature directory).
+LocalSocket {{DATA}}/run/clamd.sock
+LocalSocketMode 600
+DatabaseDirectory {{DB}}
+Foreground yes
+LogFile {{DATA}}/logs/clamd.log
+LogTime yes
+LogFileMaxSize 20M
+# one stream = one file; portals cap files at 2 GiB (PORTAL_MAX_FILE), owner uploads above 4000 MB are marked "not scanned"
+StreamMaxLength 4000M
+MaxFileSize 2000M
+MaxScanSize 4000M
+MaxRecursion 12
+MaxFiles 20000
+AlertEncrypted no
+SelfCheck 1800

@@ -1,0 +1,5 @@
+DatabaseDirectory {{DB}}
+DatabaseMirror database.clamav.net
+UpdateLogFile {{DATA}}/logs/freshclam.log
+NotifyClamd {{DATA}}/run/clamd.conf
+Checks 12

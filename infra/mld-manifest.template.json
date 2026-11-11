@@ -1,0 +1,152 @@
+{
+ "app": "sp-drive",
+ "label": "SP Drive — stockage documentaire privé (drive.spboucher.ai)",
+ "domain": "drive.spboucher.ai",
+ "port": 8660,
+ "health_path": "/api/v1/health/live",
+ "dir": "~/apps/sp-drive",
+ "sync_excludes": [
+  ".DS_Store",
+  "node_modules/",
+  "test-results/",
+  "playwright-report/",
+  ".dev/"
+ ],
+ "requires": {
+  "runtimes": [
+   "node",
+   "pm2",
+   "postgresql@17"
+  ],
+  "ram_gb": 3,
+  "ports": [
+   8660
+  ]
+ },
+ "placement": {
+  "pin": "m5ma",
+  "prefer": null,
+  "avoid": [
+   "M1M32",
+   "m6ma"
+  ],
+  "reason": "Fichiers chiffrés, clé maîtresse, PostgreSQL et ClamAV locaux sur le SSD de m5ma : ne pas déplacer avec mld move (les données ne suivent pas)"
+ },
+ "processes": [
+  {
+   "name": "sp-drive",
+   "manager": "pm2",
+   "script": "/opt/homebrew/bin/node",
+   "args": [
+    "dist/api.mjs"
+   ],
+   "cwd": "{{HOME}}/apps/sp-drive",
+   "autorestart": true,
+   "max_memory_restart": "1200M",
+   "env": {
+    "NODE_ENV": "production",
+    "PORT": "8660",
+    "HOST": "0.0.0.0",
+    "SPD_ORIGIN": "https://drive.spboucher.ai",
+    "SPD_RP_ID": "drive.spboucher.ai",
+    "DATABASE_URL": "postgres://127.0.0.1/sp_drive",
+    "SPD_WEB_DIR": "{{HOME}}/apps/sp-drive/dist/web",
+    "SPD_APP_DIR": "{{HOME}}/apps/sp-drive",
+    "SPD_TRUST_PROXY": "10.67.0.1,127.0.0.1",
+    "SPD_CLAMD_SOCKET": "{{HOME}}/sp-drive-data/run/clamd.sock",
+    "SPD_AV_MODE": "required",
+    "PATH": "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+   },
+   "interpreter": null,
+   "cron_restart": null
+  },
+  {
+   "name": "sp-drive-worker",
+   "manager": "pm2",
+   "script": "/opt/homebrew/bin/node",
+   "args": [
+    "dist/worker.mjs"
+   ],
+   "cwd": "{{HOME}}/apps/sp-drive",
+   "autorestart": true,
+   "max_memory_restart": "1500M",
+   "env": {
+    "NODE_ENV": "production",
+    "SPD_ORIGIN": "https://drive.spboucher.ai",
+    "SPD_RP_ID": "drive.spboucher.ai",
+    "DATABASE_URL": "postgres://127.0.0.1/sp_drive",
+    "SPD_APP_DIR": "{{HOME}}/apps/sp-drive",
+    "SPD_CLAMD_SOCKET": "{{HOME}}/sp-drive-data/run/clamd.sock",
+    "SPD_AV_MODE": "required",
+    "PATH": "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+   },
+   "interpreter": null,
+   "cron_restart": null
+  },
+  {
+   "name": "sp-drive-clamd",
+   "manager": "pm2",
+   "script": "/opt/homebrew/sbin/clamd",
+   "args": [
+    "-c",
+    "{{HOME}}/sp-drive-data/run/clamd.conf"
+   ],
+   "cwd": "{{HOME}}/apps/sp-drive",
+   "autorestart": true,
+   "interpreter": "none",
+   "env": {},
+   "cron_restart": null,
+   "max_memory_restart": null
+  },
+  {
+   "name": "sp-drive-freshclam",
+   "manager": "pm2",
+   "script": "/opt/homebrew/bin/freshclam",
+   "args": [
+    "--config-file={{HOME}}/sp-drive-data/run/freshclam.conf"
+   ],
+   "cwd": "{{HOME}}/apps/sp-drive",
+   "interpreter": "none",
+   "cron_restart": "17 */6 * * *",
+   "autorestart": false,
+   "env": {},
+   "max_memory_restart": null
+  },
+  {
+   "name": "sp-drive-backup",
+   "manager": "pm2",
+   "script": "/bin/zsh",
+   "args": [
+    "scripts/backup.sh"
+   ],
+   "cwd": "{{HOME}}/apps/sp-drive",
+   "cron_restart": "40 3 * * *",
+   "autorestart": false,
+   "env": {
+    "DATABASE_URL": "postgres://127.0.0.1/sp_drive",
+    "PATH": "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+   },
+   "interpreter": null,
+   "max_memory_restart": null
+  }
+ ],
+ "hooks": {
+  "post_sync": [
+   "set -o pipefail; export PATH=\"/opt/homebrew/bin:$PATH\"; pnpm install --frozen-lockfile --silent 2>&1 | tail -2; test -d node_modules/fastify && echo '  deps ok'",
+   "set -o pipefail; export PATH=\"/opt/homebrew/bin:$PATH\"; node scripts/build.mjs >/dev/null && (cd apps/web && node_modules/.bin/vite build 2>&1 | tail -1) && test -f dist/api.mjs && test -f dist/web/index.html && echo '  build ok'",
+   "zsh scripts/node-setup.sh"
+  ],
+  "post_start": []
+ },
+ "tunnel": {
+  "domain": "drive.spboucher.ai",
+  "gateway": "BHS64",
+  "note": "DNS drive.spboucher.ai → 51.161.112.61 en place (vérifié 2026-11-11)"
+ },
+ "notes": "API + web (dist/), worker, clamd, freshclam, sauvegarde nocturne. Données : ~/sp-drive-data (objets chiffrés), clé maîtresse ~/.config/sp-drive/master.key (copie hors nœud obligatoire). Rebuild sur le nœud : pnpm install --frozen-lockfile && pnpm build && pm2 restart sp-drive sp-drive-worker. Voir docs/runbooks/operations.md.",
+ "extra_paths": [],
+ "ngrok": null,
+ "launchd": [],
+ "env_overrides": {},
+ "ka_repo": false
+}
