@@ -1,0 +1,23 @@
+{
+  "name": "sp-drive",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "packageManager": "pnpm@11.1.2",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "typecheck": "tsc -p packages/shared && tsc -p services/api && tsc -p apps/web && tsc -p apps/web/tsconfig.sw.json",
+    "test": "vitest run",
+    "build": "node scripts/build.mjs && (cd apps/web && node_modules/.bin/vite build)",
+    "e2e": "playwright test -c tests/e2e/playwright.config.ts",
+    "migrate": "tsx services/api/src/cli.ts migrate"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "@types/node": "26.6.6",
+    "esbuild": "0.28.2",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  }
+}

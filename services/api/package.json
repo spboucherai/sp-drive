@@ -1,0 +1,26 @@
+{
+  "name": "@spd/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@fastify/cookie": "11.1.5",
+    "@fastify/rate-limit": "11.2.2",
+    "@fastify/static": "10.1.10",
+    "@simplewebauthn/server": "14.1.0",
+    "@spd/shared": "workspace:*",
+    "exceljs": "^4.4.0",
+    "fastify": "5.12.8",
+    "file-type": "^22.3.0",
+    "postgres": "4.1.0",
+    "tar-stream": "^3.2.2",
+    "yauzl": "^3.4.0",
+    "yazl": "^3.3.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/tar-stream": "^3.1.5",
+    "@types/yauzl": "^3.4.0",
+    "@types/yazl": "^3.3.1"
+  }
+}
