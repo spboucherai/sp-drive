@@ -1,0 +1,178 @@
+// One entry of the listing, as a table-like row (list) or a card (grid). Memoised: a selection change re-renders
+// only the rows whose state changed, which keeps folders with thousands of entries responsive.
+import { formatBytes } from '@spd/shared';
+import { memo, type MouseEvent, type DragEvent, useRef, useState } from 'react';
+import { Glyph } from '../glyphs.tsx';
+import { fmtDate, fmtRelative, getLocale, useT } from '../i18n.ts';
+import { Thumb } from '../preview/Thumb.tsx';
+import { ownerSource } from '../sources.ts';
+import type { Item, Tag } from '../types.ts';
+import { Badge, cx } from '../ui.tsx';
+import { tagStyle } from './lib.ts';
+
+/** Callbacks from the explorer. The object is stable for the life of the explorer so rows never re-render for it. */
+export interface RowApi {
+  click(e: MouseEvent, id: string, touch: boolean): void;
+  open(id: string): void;
+  menu(id: string, at: { x: number; y: number } | DOMRect): void;
+  longPress(id: string): void;
+  focus(id: string): void;
+  dragStart(e: DragEvent, id: string): void;
+  dragEnd(): void;
+  canDrop(id: string): boolean;
+  drop(id: string): void;
+}
+export type ViewMode = 'grid' | 'list';
+
+// Which kind of pointer started the current gesture: a tap opens, a mouse click selects.
+let pointer = 'mouse';
+let swallowClickUntil = 0;
+
+export function TagChip({ tag, small }: { tag: Tag; small?: boolean }) {
+  return <span className={cx('inline-flex max-w-32 shrink-0 items-center truncate rounded-full font-medium', small ? 'px-1.5 py-px text-[11px]' : 'px-2 py-0.5 text-xs', tagStyle(tag.color).chip)}>{tag.name}</span>;
+}
+
+interface Props { item: Item; mode: ViewMode; selected: boolean; tabbable: boolean; tags: Map<string, Tag>; api: RowApi; index: number }
+export const ItemRow = memo(function ItemRow({ item, mode, selected, tabbable, tags, api, index }: Props) {
+  const t = useT();
+  const [over, setOver] = useState(false);
+  const press = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
+  const file = item.type === 'file' ? item : null;
+  const infected = file?.scan === 'infected';
+  const endPress = () => { if (press.current) { clearTimeout(press.current.timer); press.current = null; } };
+  const longPress = () => { endPress(); swallowClickUntil = Date.now() + 700; navigator.vibrate?.(10); api.longPress(item.id); };
+
+  const row = {
+    role: 'row', 'aria-selected': selected, 'aria-rowindex': index + 1, 'data-id': item.id, 'data-type': item.type, tabIndex: tabbable ? 0 : -1,
+    draggable: true,
+    onFocus: (e: React.FocusEvent) => { if (e.target === e.currentTarget) api.focus(item.id); },
+    onPointerDown: (e: React.PointerEvent) => {
+      pointer = e.pointerType;
+      if (e.pointerType !== 'touch') return;
+      endPress();
+      press.current = { x: e.clientX, y: e.clientY, timer: setTimeout(longPress, 480) };
+    },
+    onPointerMove: (e: React.PointerEvent) => { if (press.current && Math.hypot(e.clientX - press.current.x, e.clientY - press.current.y) > 10) endPress(); },
+    onPointerUp: endPress, onPointerCancel: endPress,
+    onClick: (e: MouseEvent) => { if (Date.now() < swallowClickUntil) { swallowClickUntil = 0; return; } api.click(e, item.id, pointer === 'touch'); },
+    onDoubleClick: () => { if (pointer !== 'touch') api.open(item.id); },
+    onContextMenu: (e: MouseEvent) => {
+      e.preventDefault();
+      if (pointer === 'touch') { if (press.current) longPress(); return; } // Android fires contextmenu on a long press
+      api.menu(item.id, { x: e.clientX, y: e.clientY });
+    },
+    onDragStart: (e: DragEvent) => { if (pointer === 'touch') { e.preventDefault(); return; } api.dragStart(e, item.id); },
+    onDragEnd: () => api.dragEnd(),
+    ...(item.type === 'folder' ? {
+      onDragOver: (e: DragEvent) => { if (!api.canDrop(item.id)) return; e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; if (!over) setOver(true); },
+      onDragLeave: () => setOver(false),
+      onDrop: (e: DragEvent) => { if (!api.canDrop(item.id)) return; e.preventDefault(); e.stopPropagation(); setOver(false); api.drop(item.id); },
+    } : {}),
+  };
+  const state = cx('group relative cursor-default select-none outline-none [-webkit-touch-callout:none] [&_img]:pointer-events-none focus-visible:ring-2 focus-visible:ring-accent',
+    over ? 'bg-accent-soft ring-2 ring-accent' : selected ? 'bg-accent-soft' : 'hover:bg-hover');
+
+  const thumb = (cls: string) => (
+    <Thumb name={item.name} kind={file ? file.kind : 'folder'} className={cls}
+      src={file && file.thumb && !infected ? ownerSource(file).previewUrl('thumb') : undefined} />
+  );
+  const fileTags = file ? file.tagIds.map((id) => tags.get(id)).filter((x): x is Tag => !!x) : [];
+  const marks = (
+    <>
+      {item.starred ? <span className="shrink-0 text-amber-500" title={t('explorer.starred')}><Glyph name="star" size={14} fill="currentColor" /><span className="sr-only">{t('explorer.starred')}</span></span> : null}
+      {infected ? <Badge tone="danger"><Glyph name="warning" size={12} />{t('explorer.infected')}</Badge> : null}
+      {file && file.versions > 1 ? <span className="shrink-0 rounded-full bg-hover px-1.5 py-px text-[11px] font-medium text-ink-2" title={t('explorer.versionsN', { n: file.versions })}>v{file.versions}</span> : null}
+      {file?.origin === 'request' ? <span className="shrink-0 text-ink-3" title={t('explorer.viaPortal')}><Glyph name="inbox" size={14} /><span className="sr-only">{t('explorer.viaPortal')}</span></span> : null}
+    </>
+  );
+  const more = (
+    <button type="button" tabIndex={-1} aria-label={t('explorer.actionsFor', { name: item.name })} aria-haspopup="menu" data-more
+      onClick={(e) => { e.stopPropagation(); api.menu(item.id, e.currentTarget.getBoundingClientRect()); }} onDoubleClick={(e) => e.stopPropagation()} onPointerDown={(e) => { pointer = e.pointerType; e.stopPropagation(); }}
+      className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-ink-2 transition hover:bg-line hover:text-ink focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus:opacity-100 [@media(hover:hover)]:group-aria-selected:opacity-100">
+      <Glyph name="dots" size={20} strokeWidth={2.6} />
+    </button>
+  );
+  const when = item.trashedAt ?? item.updatedAt;
+  const size = file ? formatBytes(file.size, getLocale()) : null;
+
+  if (mode === 'list') return (
+    <div {...row} className={cx(state, 'grid min-h-14 grid-cols-[minmax(0,1fr)_2.5rem] items-center gap-x-3 border-b border-line px-2 sm:min-h-12 sm:grid-cols-[minmax(0,1fr)_9.5rem_5.5rem_2.5rem] sm:px-3 [contain-intrinsic-size:auto_3.5rem] [content-visibility:auto]')}>
+      <div role="gridcell" className="flex min-w-0 items-center gap-3">
+        {thumb('h-9 w-9 shrink-0 overflow-hidden rounded-lg!')}
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-sm font-medium text-ink" data-name>{item.name}</span>
+            {marks}
+            <span className="hidden min-w-0 items-center gap-1 lg:flex">{fileTags.slice(0, 3).map((g) => <TagChip key={g.id} tag={g} small />)}</span>
+          </div>
+          <div className="flex items-center gap-1.5 truncate text-xs text-ink-3 sm:hidden">
+            <span className="truncate">{size ? `${size} · ` : ''}{fmtRelative(when)}</span>
+            {fileTags.slice(0, 4).map((g) => <span key={g.id} title={g.name} className={cx('h-2 w-2 shrink-0 rounded-full', tagStyle(g.color).dot)} />)}
+          </div>
+        </div>
+      </div>
+      <div role="gridcell" className="hidden truncate text-sm text-ink-2 sm:block" title={fmtDate(when)}>{fmtRelative(when)}</div>
+      <div role="gridcell" className="hidden text-right text-sm text-ink-2 tabular-nums sm:block">{size ?? '—'}</div>
+      <div role="gridcell" className="flex justify-end">{more}</div>
+    </div>
+  );
+  if (!file) return (
+    <div {...row} className={cx(state, 'rounded-card border border-line bg-surface', selected && 'border-accent')}>
+      <div role="gridcell" className="flex h-14 items-center gap-2.5 pr-1 pl-3">
+        {thumb('h-8 w-8 shrink-0 rounded-lg!')}
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink" data-name>{item.name}</span>
+        {marks}
+        {more}
+      </div>
+    </div>
+  );
+  return (
+    <div {...row} className={cx(state, 'rounded-card border border-line bg-surface', selected && 'border-accent')}>
+      <div role="gridcell" className="flex h-full flex-col p-1.5">
+        {thumb('aspect-[4/3] w-full overflow-hidden rounded-[10px]!')}
+        <div className="flex items-center gap-1 pt-1.5 pl-1.5">
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-1.5"><span className="truncate text-sm font-medium text-ink" data-name>{item.name}</span>{marks}</div>
+            <div className="flex items-center gap-1.5 text-xs text-ink-3">
+              <span className="truncate">{size}<span className="max-sm:hidden"> · {fmtRelative(when)}</span></span>
+              {fileTags.slice(0, 4).map((g) => <span key={g.id} title={g.name} className={cx('h-2 w-2 shrink-0 rounded-full', tagStyle(g.color).dot)} />)}
+            </div>
+          </div>
+          {more}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+export function ListHeader({ sort, dir, onSort }: { sort?: string; dir?: string; onSort?: (key: 'name' | 'updated' | 'size') => void }) {
+  const t = useT();
+  const col = (key: 'name' | 'updated' | 'size', label: string, cls: string) => (
+    <div role="columnheader" aria-sort={onSort && sort === key ? (dir === 'desc' ? 'descending' : 'ascending') : undefined} className={cls}>
+      {onSort ? (
+        <button type="button" onClick={() => onSort(key)} className="inline-flex h-8 items-center gap-1 rounded-md px-1 hover:text-ink">
+          {label}{sort === key ? <Glyph name={dir === 'desc' ? 'arrowDown' : 'arrowUp'} size={12} /> : null}
+        </button>
+      ) : <span className="px-1">{label}</span>}
+    </div>
+  );
+  return (
+    <div role="row" className="hidden grid-cols-[minmax(0,1fr)_9.5rem_5.5rem_2.5rem] items-center gap-x-3 border-b border-line px-3 text-xs font-medium text-ink-3 sm:grid">
+      {col('name', t('explorer.col.name'), '')}
+      {col('updated', t('explorer.col.updated'), '-ml-1')}
+      {col('size', t('explorer.col.size'), 'text-right')}
+      <div role="columnheader"><span className="sr-only">{t('common.more')}</span></div>
+    </div>
+  );
+}
+
+export function Skeleton({ mode }: { mode: ViewMode }) {
+  const t = useT();
+  return (
+    <div role="status" aria-label={t('common.loading')} className={cx('animate-pulse', mode === 'grid' ? 'grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(12rem,1fr))]' : 'flex flex-col')}>
+      {Array.from({ length: mode === 'grid' ? 8 : 9 }, (_, i) => mode === 'grid'
+        ? <div key={i} className="rounded-card border border-line bg-surface p-1.5"><div className="aspect-[4/3] rounded-[10px] bg-hover" /><div className="m-1.5 h-3.5 w-2/3 rounded bg-hover" /><div className="m-1.5 h-3 w-1/3 rounded bg-hover" /></div>
+        : <div key={i} className="flex h-14 items-center gap-3 border-b border-line px-3 sm:h-12"><div className="h-9 w-9 rounded-md bg-hover" /><div className="h-3.5 rounded bg-hover" style={{ width: `${30 + ((i * 17) % 40)}%` }} /></div>)}
+    </div>
+  );
+}

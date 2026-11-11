@@ -14,6 +14,7 @@ export const common: Dict = {
     'error.recovery_locked': 'Trop de tentatives. Réessayez plus tard.', 'error.totp_invalid': 'Code refusé.', 'error.email_taken': 'Un compte utilise déjà cette adresse.', 'error.self_lockout': 'Vous ne pouvez pas désactiver ou rétrograder votre propre compte.',
     'error.bad_expiry': 'La date d’expiration doit être dans le futur.', 'error.current_version': 'La version courante ne peut pas être supprimée.', 'error.preview_failed': 'L’aperçu n’a pas pu être produit.',
     'error.preview_unsupported': 'Aucun aperçu pour ce format.', 'error.empty_selection': 'Rien à télécharger.', 'error.recovery_session': 'Cette session de récupération sert uniquement à enregistrer une nouvelle passkey.',
+    'error.http_error': 'Le serveur a répondu par une erreur. Réessayez dans un instant.',
   },
   en: {
     appName: 'SP Drive', cancel: 'Cancel', close: 'Close', save: 'Save', delete: 'Delete', confirm: 'Confirm', copy: 'Copy', copied: 'Copied', retry: 'Retry', back: 'Back',
@@ -28,5 +29,6 @@ export const common: Dict = {
     'error.recovery_locked': 'Too many attempts. Try again later.', 'error.totp_invalid': 'Code not accepted.', 'error.email_taken': 'An account already uses this address.', 'error.self_lockout': 'You cannot disable or demote your own account.',
     'error.bad_expiry': 'The expiry must be in the future.', 'error.current_version': 'The current version cannot be deleted.', 'error.preview_failed': 'The preview could not be produced.',
     'error.preview_unsupported': 'No preview for this format.', 'error.empty_selection': 'Nothing to download.', 'error.recovery_session': 'This recovery session can only enrol a new passkey.',
+    'error.http_error': 'The server answered with an error. Try again in a moment.',
   },
 };

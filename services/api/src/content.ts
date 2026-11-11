@@ -68,12 +68,24 @@ export async function sendPreview(t: Db, req: FastifyRequest, reply: FastifyRepl
   if (!(kind in PREVIEW_TYPE)) throw notFound('unknown preview');
   const [p] = await t<{ status: string; storage_key: string | null; wrapped_key: Buffer | null; size: string | null; error: string | null }[]>`
     select status, storage_key, wrapped_key, size::text, error from previews where object_id = ${objectId} and kind = ${kind}`;
+  if (!p && !workerPlan(name).includes(kind)) throw new UserError('preview_unsupported', 'no preview for this format', 404); // never planned: do not let clients poll
   if (!p || p.status === 'pending') return reply.code(202).send({ status: 'pending' });
   if (p.status === 'unsupported') throw new UserError('preview_unsupported', 'no preview for this format', 404);
   if (p.status === 'failed' || !p.storage_key || !p.wrapped_key) throw new UserError('preview_failed', p.error ?? 'the preview could not be produced', 422);
   return sendSealed(req, reply, { storage_key: p.storage_key, wrapped_key: p.wrapped_key, size: Number(p.size) },
     { name: `${name}.${kind}`, etag: `${objectId}-${kind}`, mode: 'inline', contentType: PREVIEW_TYPE[kind], cache: 'private, max-age=3600' });
 }
+/** Every derived preview the worker produces for a name (see worker.ts `preview`). */
+export const workerPlan = (name: string): string[] => {
+  switch (previewKind(name)) {
+    case 'image': case 'pdf': case 'video': return ['thumb'];
+    case 'heic': return ['thumb', 'image'];
+    case 'office': return ['pdf', 'thumb'];
+    case 'sheet': return ['sheet'];
+    case 'archive': return ['archive'];
+    default: return [];
+  }
+};
 /** Which derived previews the client should ask for, by file kind. */
 export const previewPlan = (name: string): string[] => {
   switch (previewKind(name)) {

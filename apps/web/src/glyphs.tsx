@@ -28,6 +28,13 @@ const P: Record<string, string> = {
   logout: 'M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10', zoomIn: 'M11 4a7 7 0 1 1 0 14 7 7 0 0 1 0-14zM20 20l-4-4M11 8v6M8 11h6', zoomOut: 'M11 4a7 7 0 1 1 0 14 7 7 0 0 1 0-14zM20 20l-4-4M8 11h6',
   pause: 'M8 5v14M16 5v14', play: 'M7 4l13 8-13 8z', refresh: 'M20 11a8 8 0 0 0-14.5-4M4 4v4h4M4 13a8 8 0 0 0 14.5 4M20 20v-4h-4', restore: 'M4 12a8 8 0 1 0 2.6-5.9L4 8M4 4v4h4', duplicate: 'M8 8h12v12H8zM4 16V4h12',
   device: 'M7 3h10v18H7zM11 18h2', external: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6',
+  print: 'M7 8V4h10v4M7 17H4V9a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v8h-3M7 14h10v6H7z', globe: 'M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18zM3 12h18M12 3c2.5 2.6 3.5 5.6 3.5 9s-1 6.400-3.5 9c-2.500-2.600-3.500-5.600-3.500-9s1-6.400 3.500-9z',
+  activity: 'M3 12h4l3-8 4 16 3-8h4', laptop: 'M5 5h14v10H5zM2 19h20', server: 'M4 4h16v7H4zM4 13h16v7H4zM8 7.500h.01M8 16.500h.01',
+  folderPlus: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM12 11v5M9.5 13.5h5', sort: 'M7 5v14M4 16l3 3 3-3M17 19V5M14 8l3-3 3 3', blank: 'M0 0',
+  fitWidth: 'M4 5v14M20 5v14M8 12h8M10.5 9.5L8 12l2.5 2.5M13.5 9.5L16 12l-2.5 2.5', fitPage: 'M6 3h12v18H6zM12 7.5v9M9.8 9.7L12 7.5l2.2 2.2M9.8 14.3L12 16.5l2.2-2.2', wrap: 'M4 6h16M4 12h13a3 3 0 0 1 0 6h-4M15 16l-2 2 2 2M4 18h5',
+  expandAll: 'M7 9l5-5 5 5M7 15l5 5 5-5', collapseAll: 'M7 4l5 5 5-5M7 20l5-5 5 5',
+  pdf: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M8.5 17.5c2-1.5 3.5-4.5 3.5-7 0 3 2 5.5 4 6-2.5 0-5.5.3-7.5 1z', doc: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M8.5 12.5h7M8.5 15.5h7M8.5 18.500h4',
+  filter: 'M4 6h16M7 12h10M10 18h4',
 };
 export type GlyphName = keyof typeof P;
 export function Glyph({ name, size = 20, ...rest }: { name: string; size?: number } & SVGProps<SVGSVGElement>) {

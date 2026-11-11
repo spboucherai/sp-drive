@@ -1,0 +1,75 @@
+/* Styles of the preview viewer that utilities cannot express: kind colours, text lines, Markdown prose, pdf.js text layer. */
+
+/* --- icon tiles: one colour per family, tuned for both themes --- */
+.spd-thumb { --tile: #7b8696; background: color-mix(in srgb, var(--tile) 13%, var(--surface)); color: var(--tile); }
+.spd-thumb[data-family='folder'] { --tile: #3b7be8; }
+.spd-thumb[data-family='image'] { --tile: #0b8a8a; }
+.spd-thumb[data-family='video'] { --tile: #7c3aed; }
+.spd-thumb[data-family='audio'] { --tile: #be2a9f; }
+.spd-thumb[data-family='pdf'] { --tile: #d43a2f; }
+.spd-thumb[data-family='document'] { --tile: #2456e6; }
+.spd-thumb[data-family='sheet'] { --tile: #188038; }
+.spd-thumb[data-family='archive'] { --tile: #9a6b00; }
+.spd-thumb[data-family='text'] { --tile: #4a5565; }
+.dark .spd-thumb { --tile: #8a94a8; background: color-mix(in srgb, var(--tile) 17%, var(--surface)); }
+.dark .spd-thumb[data-family='folder'] { --tile: #7ea8ff; }
+.dark .spd-thumb[data-family='image'] { --tile: #4fd1c5; }
+.dark .spd-thumb[data-family='video'] { --tile: #b79bff; }
+.dark .spd-thumb[data-family='audio'] { --tile: #f08bdc; }
+.dark .spd-thumb[data-family='pdf'] { --tile: #ff8a80; }
+.dark .spd-thumb[data-family='document'] { --tile: #8fabff; }
+.dark .spd-thumb[data-family='sheet'] { --tile: #5fd38a; }
+.dark .spd-thumb[data-family='archive'] { --tile: #e5b85c; }
+.dark .spd-thumb[data-family='text'] { --tile: #a9b2c1; }
+
+/* --- plain text with line numbers --- */
+.spd-code { font-family: var(--font-mono); font-size: 13px; line-height: 1.55; tab-size: 4; color: var(--ink); }
+.spd-chunk { content-visibility: auto; contain-intrinsic-size: auto 4000px; }
+.spd-line { padding-left: calc(var(--gutter) + 1.25rem); padding-right: 1rem; min-height: 1.55em; white-space: pre; }
+.spd-code[data-wrap='1'] .spd-line { white-space: pre-wrap; overflow-wrap: anywhere; }
+.spd-line::before {
+  content: attr(data-n); position: sticky; left: 0; display: inline-block; box-sizing: border-box; width: calc(var(--gutter) + 0.75rem); margin-left: calc(-1 * (var(--gutter) + 1.25rem)); margin-right: 0.5rem;
+  padding-right: 0.5rem; text-align: right; color: var(--ink-3); background: var(--surface); border-right: 1px solid var(--line); user-select: none; -webkit-user-select: none;
+}
+
+/* --- sanitised Markdown --- */
+.spd-md { color: var(--ink); font-size: 15px; line-height: 1.65; overflow-wrap: anywhere; }
+.spd-md > :first-child { margin-top: 0; }
+.spd-md h1, .spd-md h2, .spd-md h3, .spd-md h4, .spd-md h5, .spd-md h6 { font-weight: 650; line-height: 1.25; margin: 1.6em 0 0.6em; }
+.spd-md h1 { font-size: 1.7em; padding-bottom: 0.3em; border-bottom: 1px solid var(--line); }
+.spd-md h2 { font-size: 1.35em; padding-bottom: 0.25em; border-bottom: 1px solid var(--line); }
+.spd-md h3 { font-size: 1.15em; }
+.spd-md p, .spd-md ul, .spd-md ol, .spd-md blockquote, .spd-md pre, .spd-md table { margin: 0 0 1em; }
+.spd-md ul { list-style: disc; padding-left: 1.5em; }
+.spd-md ol { list-style: decimal; padding-left: 1.5em; }
+.spd-md li > ul, .spd-md li > ol { margin-bottom: 0; }
+.spd-md a[href] { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.spd-md blockquote { border-left: 3px solid var(--line-strong); padding-left: 1em; color: var(--ink-2); }
+.spd-md code { font-family: var(--font-mono); font-size: 0.88em; background: var(--hover); border-radius: 5px; padding: 0.12em 0.35em; }
+.spd-md pre { background: var(--hover); border-radius: 10px; padding: 0.9em 1em; overflow-x: auto; }
+.spd-md pre code { background: none; padding: 0; }
+.spd-md hr { border: 0; border-top: 1px solid var(--line); margin: 1.6em 0; }
+.spd-md table { display: block; overflow-x: auto; border-collapse: collapse; }
+.spd-md th, .spd-md td { border: 1px solid var(--line); padding: 0.4em 0.7em; text-align: left; }
+.spd-md th { background: var(--hover); font-weight: 600; }
+.spd-md img { max-width: 100%; height: auto; border-radius: 8px; }
+.spd-md input[type='checkbox'] { margin-right: 0.4em; }
+.spd-md .spd-md-blocked { display: inline-block; font-size: 0.85em; color: var(--ink-3); border: 1px dashed var(--line-strong); border-radius: 6px; padding: 0.1em 0.5em; }
+
+/* --- PDF pages: canvas + pdf.js text layer (rules adapted from pdf.js' viewer stylesheet) --- */
+.spd-pdf-page { background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.18), 0 6px 18px -8px rgb(0 0 0 / 0.25); --scale-round-x: 1px; --scale-round-y: 1px; }
+.spd-pdf-page canvas { display: block; width: 100%; height: 100%; }
+.spd-pdf-page .textLayer {
+  color-scheme: only light; position: absolute; inset: 0; overflow: clip; line-height: 1; letter-spacing: normal; word-spacing: normal; text-align: initial;
+  -webkit-text-size-adjust: none; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; z-index: 1;
+  --min-font-size: 1; --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size)); --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.spd-pdf-page .textLayer :is(span, br) { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; user-select: text; -webkit-user-select: text; }
+.spd-pdf-page .textLayer > :not(.markedContent), .spd-pdf-page .textLayer .markedContent span:not(.markedContent) {
+  z-index: 1; --font-height: 0; font-size: calc(var(--text-scale-factor) * var(--font-height)); --scale-x: 1; --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.spd-pdf-page .textLayer .markedContent { display: contents; }
+.spd-pdf-page .textLayer ::selection { background: rgb(36 86 230 / 0.28); }
+.spd-pdf-hit { position: absolute; background: rgb(255 204 0 / 0.42); border-radius: 2px; pointer-events: none; mix-blend-mode: multiply; }
+.spd-pdf-hit[data-current='1'] { background: rgb(255 122 0 / 0.6); outline: 2px solid rgb(230 96 0 / 0.9); }

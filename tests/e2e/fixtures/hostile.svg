@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 200 120" width="200" height="120" onload="window.__pwned = 1; fetch('/api/v1/__pwned?via=svg-onload')">
+  <rect width="200" height="120" fill="#2456e6"/>
+  <circle cx="100" cy="60" r="36" fill="#ffd34d"/>
+  <script>window.__pwned = 1; top.__pwned = 1; fetch('/api/v1/__pwned?via=svg-script');</script>
+  <image href="/api/v1/__pwned?via=svg-image" width="1" height="1"/>
+  <foreignObject width="1" height="1"><img xmlns="http://www.w3.org/1999/xhtml" src="x" onerror="window.__pwned = 1"/></foreignObject>
+</svg>
