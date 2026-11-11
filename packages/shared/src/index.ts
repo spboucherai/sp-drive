@@ -98,3 +98,6 @@ export type FieldMode = 'off' | 'optional' | 'required';
 export interface CustomField { key: string; label: string; required: boolean }
 export interface RequestFields { name: FieldMode; email: FieldMode; reference: FieldMode; custom: CustomField[] }
 export const DEFAULT_FIELDS: RequestFields = { name: 'optional', email: 'optional', reference: 'off', custom: [] };
+
+/** Extensions a deposit portal never accepts, whatever its allow-list says (executables, scripts, active content). */
+export const BLOCKED_EXT: ReadonlySet<string> = new Set(['exe', 'dll', 'msi', 'scr', 'com', 'bat', 'cmd', 'ps1', 'vbs', 'js', 'jse', 'wsf', 'hta', 'jar', 'app', 'dmg', 'pkg', 'sh', 'command', 'lnk', 'apk', 'deb', 'rpm', 'iso', 'html', 'htm', 'svg', 'php']);

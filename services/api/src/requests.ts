@@ -5,7 +5,7 @@ import { randomInt } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import type { Readable } from 'node:stream';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { DEFAULT_FIELDS, extOf, MAX_CHUNK_BYTES, type RequestFields, sanitizeName } from '@spd/shared';
+import { BLOCKED_EXT, DEFAULT_FIELDS, extOf, MAX_CHUNK_BYTES, type RequestFields, sanitizeName } from '@spd/shared';
 import { z } from 'zod';
 import { actorOf, requireUser, userOf } from './auth.ts';
 import { config, notFound, UserError } from './config.ts';
@@ -18,8 +18,7 @@ import { appendChunk, assertQuota, sealCheck, uploadJson, uploadPath, type Uploa
 const GIB = 1024 ** 3, MIB = 1024 ** 2;
 /** Largest file a portal may accept: what the antivirus can scan in one stream. */
 export const PORTAL_MAX_FILE = 2 * GIB;
-/** Never accepted from a portal, whatever its allow-list says. */
-export const BLOCKED_EXT = new Set(['exe', 'dll', 'msi', 'scr', 'com', 'bat', 'cmd', 'ps1', 'vbs', 'js', 'jse', 'wsf', 'hta', 'jar', 'app', 'dmg', 'pkg', 'sh', 'command', 'lnk', 'apk', 'deb', 'rpm', 'iso', 'html', 'htm', 'svg', 'php']);
+export { BLOCKED_EXT };
 
 export interface RequestRow {
   id: string; owner_id: string; folder_id: string; token_hash: string; title: string; description: string; instructions: string; confirmation_message: string; brand_name: string; brand_color: string;

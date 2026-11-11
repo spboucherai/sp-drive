@@ -37,7 +37,8 @@ export function Spinner({ size = 20 }: { size?: number }) {
 }
 
 // --- form fields ---
-const inputCls = 'h-10 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25 disabled:opacity-60';
+// 16 px on phones: iOS zooms the page when a focused field is smaller
+const inputCls = 'h-10 w-full rounded-lg border border-line-strong bg-surface px-3 text-base sm:text-sm text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25 disabled:opacity-60';
 export function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string | null; children: (id: string, describedBy: string | undefined) => ReactNode }) {
   const id = useId();
   const desc = hint || error ? `${id}-d` : undefined;
