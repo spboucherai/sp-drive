@@ -23,6 +23,9 @@
 .dark .spd-thumb[data-family='archive'] { --tile: #e5b85c; }
 .dark .spd-thumb[data-family='text'] { --tile: #a9b2c1; }
 
+.spd-sheet { background: #fff; box-shadow: 0 0 0 1px rgb(0 0 0 / 0.06), 0 6px 16px -6px rgb(0 0 0 / 0.35); }
+.spd-badge { background: var(--tile); color: var(--surface); }
+
 /* --- plain text with line numbers --- */
 .spd-code { font-family: var(--font-mono); font-size: 13px; line-height: 1.55; tab-size: 4; color: var(--ink); }
 .spd-chunk { content-visibility: auto; contain-intrinsic-size: auto 4000px; }

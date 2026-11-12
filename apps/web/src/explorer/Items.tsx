@@ -118,11 +118,12 @@ export const ItemRow = memo(function ItemRow({ item, mode, selected, tabbable, t
   );
   if (!file) return (
     <div {...row} className={cx(state, 'press rounded-card bg-surface shadow-(--shadow-card)', selected && 'ring-2 ring-accent')}>
-      <div role="gridcell" className="flex h-[64px] items-center gap-3 pr-0.5 pl-3">
-        {thumb('h-10 w-10 shrink-0 rounded-[12px]!')}
-        <span className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] text-ink" data-name>{item.name}</span>
-        {marks}
-        {more}
+      <div role="gridcell" className="flex h-full min-h-[112px] flex-col justify-between pt-3 pb-3 pl-3.5">
+        <div className="flex items-start justify-between">
+          {thumb('h-11 w-11 shrink-0 rounded-[13px]!')}
+          <div className="-mt-1.5 flex items-center gap-1 pr-0.5">{marks}{more}</div>
+        </div>
+        <span className="line-clamp-2 pr-3 text-[15px] leading-snug font-semibold tracking-[-0.01em] break-words text-ink" data-name>{item.name}</span>
       </div>
     </div>
   );

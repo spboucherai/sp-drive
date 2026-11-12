@@ -399,7 +399,6 @@ function Screen({ view, folderId }: { view: ExplorerView; folderId?: string }) {
     { label: t('explorer.sort.desc'), icon: dir === 'desc' ? 'check' : 'blank', onSelect: () => applySort(sort, 'desc') },
   ];
   const allStarred = chosen.length > 0 && chosen.every((i) => i.starred);
-  const fab = !panelUp;
   const toolbar = chosen.length ? (
     <div role="toolbar" aria-label={t('explorer.selection.label')} className="anim-pop flex w-full items-center gap-0.5 rounded-full bg-accent-soft pr-1 ring-1 ring-accent/20 ring-inset max-sm:[&>button]:w-9 sm:w-auto" data-testid="selection-bar">
       <IconButton icon="x" label={t('explorer.selection.clear')} onClick={() => setSelected(EMPTY)} />
@@ -421,12 +420,7 @@ function Screen({ view, folderId }: { view: ExplorerView; folderId?: string }) {
     </div>
   ) : (
     <div className="flex w-full items-center gap-1 sm:w-auto">
-      {view === 'folder' ? (
-        // on a phone the main action floats above the tab bar, under the thumb; it returns to the toolbar while the transfer panel is there
-        <Button variant="primary" icon="plus" disabled={!folder} aria-haspopup="menu" data-fab={fab || undefined} style={fab ? { bottom: 'calc(var(--dock) + 10px)' } : undefined}
-          className={cx('sm:order-last sm:ml-1', fab && 'max-sm:fixed max-sm:right-4 max-sm:z-30 max-sm:h-[60px] max-sm:w-[60px] max-sm:rounded-[22px] max-sm:p-0 max-sm:shadow-[0_14px_30px_-8px_var(--grad-b)] max-sm:[&>svg]:size-7')}
-          onClick={(e) => setToolMenu({ kind: 'new', rect: e.currentTarget.getBoundingClientRect() })}><span className={cx(fab && 'max-sm:sr-only')}>{t('explorer.new')}</span></Button>
-      ) : null}
+      {view === 'folder' ? <Button variant="primary" icon="plus" className="order-last ml-1 max-sm:rounded-full" disabled={!folder} aria-haspopup="menu" onClick={(e) => setToolMenu({ kind: 'new', rect: e.currentTarget.getBoundingClientRect() })}>{t('explorer.new')}</Button> : null}
       {view === 'trash' ? <Button icon="trash" className="sm:order-last sm:ml-1" disabled={!items.length} onClick={() => setDlg({ type: 'emptyTrash' })}>{t('explorer.trash.empty')}</Button> : null}
       {view === 'search' ? <Button icon="filter" className="sm:hidden" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(!filtersOpen)}>{nFilters ? t('explorer.filters.toggleN', { n: nFilters }) : t('explorer.filters.toggle')}</Button> : null}
       <span className="flex-1" />
@@ -498,7 +492,7 @@ function Screen({ view, folderId }: { view: ExplorerView; folderId?: string }) {
       </header>
       <div className="relative flex min-h-0 flex-1">
         <div className="relative flex min-w-0 flex-1 flex-col">
-          <div className={cx('min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 pt-2 sm:px-6', panelUp ? 'pb-[calc(var(--dock)+7.5rem)] lg:pb-8' : 'pb-[calc(var(--dock)+5.5rem)] sm:pb-dock')}
+          <div className={cx('min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 pt-2 sm:px-6', panelUp ? 'pb-[calc(var(--dock)+7.5rem)] lg:pb-8' : 'pb-dock')}
             onScroll={(e) => { const y = e.currentTarget.scrollTop; if (y > 28 && !scrolled) setScrolled(true); else if (y < 4 && scrolled) setScrolled(false); }} onClick={(e) => { if (!(e.target as HTMLElement).closest('[role=row],button,a,input')) { setSelected(EMPTY); wantFocus.current = false; } }}>
             {body}
           </div>

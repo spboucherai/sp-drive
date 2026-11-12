@@ -62,9 +62,14 @@ test('screens', async ({ page, context }, info) => {
   const toggle = page.getByTestId('view-toggle');
   if ((await toggle.getAttribute('data-mode')) !== 'list') await toggle.click();
   await shot('explorer-list');
+  const bottom = () => page.locator('[data-testid=listing]').evaluate((el) => { const s = el.parentElement!; s.scrollTop = s.scrollHeight; });
+  const top = () => page.locator('[data-testid=listing]').evaluate((el) => { el.parentElement!.scrollTop = 0; });
+  await bottom(); await shot('explorer-list-bottom'); await top();
   await toggle.click();
   await page.waitForTimeout(1200);
   await shot('explorer-grid');
+  await bottom(); await shot('explorer-grid-bottom'); await top();
+  await page.waitForTimeout(300);
 
   // actions menu and details
   await row(page, 'Rapport annuel 2026.pdf').locator('[data-more]').click();

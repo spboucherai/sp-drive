@@ -13,7 +13,7 @@ const ICON: Record<Family, string> = { folder: 'folder', image: 'image', video: 
 const RETRY_MS = [2000, 5000, 12000];
 
 /** The picture over the tile. Its state belongs to one URL: the parent gives it a key, so nothing is reset after the fact. */
-function Picture({ src, onShown }: { src: string; onShown: (shown: boolean) => void }) {
+function Picture({ src, onShown, page }: { src: string; onShown: (shown: boolean) => void; page: boolean }) {
   const [state, setState] = useState<'idle' | 'loaded' | 'waiting' | 'off'>('idle');
   const [round, setRound] = useState(0);
   const tries = useRef(0);
@@ -36,7 +36,9 @@ function Picture({ src, onShown }: { src: string; onShown: (shown: boolean) => v
   if (state !== 'idle' && state !== 'loaded') return null;
   return (
     <img key={round} src={src} alt="" loading="lazy" decoding="async" draggable={false} onLoad={() => { setState('loaded'); onShown(true); }} onError={onError}
-      className={cx('absolute inset-0 h-full w-full object-cover transition-opacity duration-200', state === 'loaded' ? 'opacity-100' : 'opacity-0')} />
+      className={cx('absolute object-cover transition-opacity duration-200', state === 'loaded' ? 'opacity-100' : 'opacity-0',
+        // the first page of a document is a sheet of paper laid on the coloured tile: a blank page still reads as a document, in both themes
+        page ? 'spd-sheet inset-x-[17%] top-[13%] h-[87%] w-[66%] rounded-t-[8%] object-top' : 'inset-0 h-full w-full')} />
   );
 }
 
@@ -47,6 +49,7 @@ function Picture({ src, onShown }: { src: string; onShown: (shown: boolean) => v
  */
 export function Thumb({ src, name, kind, className }: { src?: string; name: string; kind: PreviewKind | 'folder'; className?: string }) {
   const family = FAMILY[kind] ?? 'other';
+  const page = family === 'pdf' || family === 'document' || family === 'sheet';
   const [shown, setShown] = useState<string | null>(null); // the URL whose picture is on screen
   const ext = /\.([A-Za-z0-9]{1,5})$/.exec(name)?.[1]?.toUpperCase();
   return (
@@ -56,7 +59,8 @@ export function Thumb({ src, name, kind, className }: { src?: string; name: stri
         <Glyph name={ICON[family]} className="h-[46%] max-h-14 w-[46%] max-w-14" strokeWidth={1.6} />
         {ext && kind !== 'folder' ? <span className="hidden max-w-[80%] truncate text-[10px] font-semibold tracking-wide opacity-80 @[88px]:block @[140px]:text-xs">{ext}</span> : null}
       </span>
-      {src ? <Picture key={src} src={src} onShown={(ok) => setShown(ok ? src : null)} /> : null}
+      {src ? <Picture key={src} src={src} page={page} onShown={(ok) => setShown(ok ? src : null)} /> : null}
+      {page && ext && src && shown === src ? <span className="spd-badge pointer-events-none absolute bottom-[7%] left-1/2 hidden -translate-x-1/2 rounded-full px-2 py-0.5 text-[10px] leading-tight font-bold tracking-wide @[88px]:block" aria-hidden="true">{ext}</span> : null}
       {src && shown === src ? <span className="pointer-events-none absolute inset-0 rounded-[inherit] border border-line" aria-hidden="true" /> : null}
     </span>
   );
