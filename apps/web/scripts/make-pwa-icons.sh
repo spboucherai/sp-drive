@@ -5,9 +5,10 @@
 #   apple-touch-icon (180)   : full-bleed square (iOS rounds the corners itself), mark at full size
 set -euo pipefail
 cd "$(dirname "$0")/../public/pwa"
-mark=$(sed -E 's/^<svg[^>]*>//; s/<\/svg>$//; s/<rect[^>]*\/>//' favicon.svg)
+defs=$(sed -E 's/^<svg[^>]*>//; s/<\/defs>.*$/<\/defs>/' favicon.svg)
+mark=$(sed -E 's/^.*<\/defs>//; s/<\/svg>$//; s/<rect width="64"[^>]*\/>//' favicon.svg)
 bleed() { # $1 = scale of the mark around the centre
-  print -r -- "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\"><rect width=\"64\" height=\"64\" fill=\"#2456e6\"/><g transform=\"translate(32 32) scale($1) translate(-32 -32)\">$mark</g></svg>"
+  print -r -- "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\">$defs<rect width=\"64\" height=\"64\" fill=\"url(#g)\"/><g transform=\"translate(32 32) scale($1) translate(-32 -32)\">$mark</g></svg>"
 }
 rsvg-convert -w 192 -h 192 favicon.svg -o icon-192.png
 rsvg-convert -w 512 -h 512 favicon.svg -o icon-512.png

@@ -71,7 +71,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
           <input data-autofocus type="text" role="combobox" aria-expanded="true" aria-controls="spd-palette-list" aria-autocomplete="list" aria-label={t('account.palette.placeholder')}
             aria-activedescendant={entries[index] ? `spd-palette-${entries[index]!.id}` : undefined} placeholder={t('account.palette.placeholder')} value={query} onChange={(e) => setQuery(e.currentTarget.value)} onKeyDown={onKey}
             autoComplete="off" autoCapitalize="off" spellCheck={false} enterKeyHint="go"
-            className="h-12 w-full rounded-xl border border-line-strong bg-surface pr-10 pl-10 text-base text-ink placeholder:text-ink-3 focus:border-accent focus:ring-2 focus:ring-accent/25 focus:outline-none" />
+            className="h-12 w-full rounded-2xl border border-line-strong bg-surface pr-10 pl-10 text-base text-ink placeholder:text-ink-3 focus:border-accent focus:ring-4 focus:ring-accent/15 focus:outline-none" />
           {pending ? <span className="absolute top-1/2 right-3 -translate-y-1/2 text-ink-3"><Spinner size={16} /></span> : null}
         </div>
         <div ref={list} id="spd-palette-list" role="listbox" aria-label={t('account.palette.title')} className="-mx-2 h-[min(22rem,50dvh)] overflow-y-auto">
@@ -85,7 +85,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
                   const on = entries[index]?.id === e.id;
                   return (
                     <div key={e.id} id={`spd-palette-${e.id}`} role="option" aria-selected={on} onMouseMove={() => { if (!on) setActive(entries.indexOf(e)); }} onClick={() => run(e)}
-                      className={cx('mx-1 flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm', on ? 'bg-accent-soft text-ink' : 'text-ink')}>
+                      className={cx('mx-1 flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm', on ? 'bg-accent-soft text-ink' : 'text-ink')}>
                       <Glyph name={e.icon} size={18} className={cx('shrink-0', on ? 'text-accent' : 'text-ink-3')} />
                       <span className="min-w-0 flex-1 truncate">{e.label}</span>
                       {e.hint ? <span className="shrink-0 text-xs text-ink-3">{e.hint}</span> : null}

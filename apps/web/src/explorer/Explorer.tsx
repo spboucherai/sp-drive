@@ -55,9 +55,9 @@ function CrumbLink({ crumb, root, current, onDropTo }: { crumb: Crumb; root: boo
       onDragOver={(e) => { if (!can()) return; e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; setOver(true); }}
       onDragLeave={() => setOver(false)}
       onDrop={(e) => { if (!can()) return; e.preventDefault(); e.stopPropagation(); setOver(false); onDropTo({ id: crumb.id, name }); }}
-      className={cx('flex h-10 min-w-0 items-center gap-1.5 rounded-lg px-2 text-sm transition', current ? 'font-semibold text-ink' : 'text-ink-2 hover:bg-hover hover:text-ink', over && 'bg-accent-soft ring-2 ring-accent')}>
-      {root ? <Glyph name="home" size={18} className="shrink-0" /> : null}
-      <span className={cx('truncate', current ? 'text-base' : 'max-w-40')}>{name}</span>
+      className={cx('flex min-w-0 items-center gap-1.5 rounded-xl px-2 transition', current ? 'min-h-11 font-bold text-ink' : 'h-9 text-[15px] font-medium text-accent hover:bg-hover sm:h-10 sm:text-sm sm:text-ink-2 sm:hover:text-ink', over && 'bg-accent-soft ring-2 ring-accent')}>
+      {root ? <Glyph name="home" size={18} className={cx('shrink-0', current && 'max-sm:hidden')} /> : null}
+      <span className={cx('truncate', current ? 'text-[30px] leading-[1.15] tracking-[-0.03em] transition-[font-size] duration-300 group-data-[scrolled=true]/head:text-[19px] sm:text-xl sm:tracking-tight' : 'max-w-40')}>{name}</span>
     </Link>
   );
 }
@@ -72,17 +72,17 @@ function Crumbs({ crumbs, onDropTo }: { crumbs: Crumb[]; onDropTo: (c: Crumb) =>
   const shown = collapse ? [crumbs[0]!, ...crumbs.slice(crumbs.length - tail)] : crumbs;
   return (
     <nav aria-label={t('explorer.breadcrumbs')} className="min-w-0">
-      <ol className="-ml-2 flex min-w-0 items-center">
+      <ol className="-ml-2 flex min-w-0 flex-wrap items-center sm:flex-nowrap">
         {shown.map((c, i) => {
           const current = c === crumbs[crumbs.length - 1];
           return (
-            <li key={c.id} className={cx('flex items-center', current ? 'min-w-0' : 'shrink-0')}>
-              {i > 0 ? <Glyph name="chevronRight" size={14} className="shrink-0 text-ink-3" /> : null}
+            <li key={c.id} className={cx('flex items-center', current ? 'min-w-0 max-sm:basis-full' : 'shrink-0')}>
+              {i > 0 ? <Glyph name="chevronRight" size={14} className={cx('shrink-0 text-ink-3', current && !(i === 1 && hidden.length) && 'max-sm:hidden')} /> : null}
               {i === 1 && hidden.length ? (
                 <>
                   <button type="button" aria-label={t('explorer.crumbsHidden', { n: hidden.length })} aria-haspopup="menu" onClick={(e) => setMenu(e.currentTarget.getBoundingClientRect())}
-                    className="flex h-10 w-9 items-center justify-center rounded-lg text-ink-2 hover:bg-hover hover:text-ink"><Glyph name="dots" size={18} strokeWidth={2.4} /></button>
-                  <Glyph name="chevronRight" size={14} className="shrink-0 text-ink-3" />
+                    className="flex h-10 w-9 items-center justify-center rounded-xl text-ink-2 hover:bg-hover hover:text-ink"><Glyph name="dots" size={18} strokeWidth={2.4} /></button>
+                  <Glyph name="chevronRight" size={14} className={cx('shrink-0 text-ink-3', current && 'max-sm:hidden')} />
                 </>
               ) : null}
               {current ? <h1 className="min-w-0"><CrumbLink crumb={c} root={c === crumbs[0]} current onDropTo={onDropTo} /></h1> : <CrumbLink crumb={c} root={c === crumbs[0]} current={false} onDropTo={onDropTo} />}
@@ -95,7 +95,8 @@ function Crumbs({ crumbs, onDropTo }: { crumbs: Crumb[]; onDropTo: (c: Crumb) =>
   );
 }
 
-const selectCls = 'h-10 w-full min-w-0 rounded-lg border border-line-strong bg-surface px-2.5 text-sm text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25';
+const sectionCls = 'mb-2.5 px-1 text-[13px] font-semibold tracking-wide text-ink-3 uppercase';
+const selectCls = 'h-11 w-full min-w-0 rounded-[14px] border border-line-strong bg-surface px-3 text-base sm:text-sm text-ink focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15';
 function Filters({ params, tags, open, onChange }: { params: URLSearchParams; tags: Tag[]; open: boolean; onChange: (patch: Record<string, string | undefined>) => void }) {
   const t = useT();
   const [q, setQ] = useState(params.get('q') ?? '');
@@ -117,7 +118,7 @@ function Filters({ params, tags, open, onChange }: { params: URLSearchParams; ta
       {field(t('explorer.filters.from'), <input type="date" value={params.get('from') ?? ''} max={params.get('to') ?? undefined} onChange={(e) => onChange({ from: e.target.value || undefined })} className={selectCls} />)}
       {field(t('explorer.filters.to'), <input type="date" value={params.get('to') ?? ''} min={params.get('from') ?? undefined} onChange={(e) => onChange({ to: e.target.value || undefined })} className={selectCls} />)}
       <button type="button" aria-pressed={starred} onClick={() => onChange({ starred: starred ? undefined : '1' })}
-        className={cx('col-span-2 inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium transition sm:col-span-1', starred ? 'border-accent bg-accent-soft text-accent' : 'border-line-strong bg-surface text-ink-2 hover:bg-hover')}>
+        className={cx('press col-span-2 inline-flex h-11 items-center justify-center gap-2 rounded-[14px] border px-3 text-sm font-medium sm:col-span-1', starred ? 'border-accent bg-accent-soft text-accent' : 'border-line-strong bg-surface text-ink-2 hover:bg-hover')}>
         <Glyph name="star" size={16} fill={starred ? 'currentColor' : 'none'} />{t('explorer.filters.starred')}
       </button>
     </form>
@@ -177,6 +178,7 @@ function Screen({ view, folderId }: { view: ExplorerView; folderId?: string }) {
   const [viewer, setViewer] = useState<FileItem | null>(null);
   const [dropping, setDropping] = useState(false);
   const dragDepth = useRef(0);
+  const [scrolled, setScrolled] = useState(false); // the large title folds once the listing has moved
   const grid = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null), dirInput = useRef<HTMLInputElement>(null), cameraInput = useRef<HTMLInputElement>(null);
 
@@ -397,10 +399,11 @@ function Screen({ view, folderId }: { view: ExplorerView; folderId?: string }) {
     { label: t('explorer.sort.desc'), icon: dir === 'desc' ? 'check' : 'blank', onSelect: () => applySort(sort, 'desc') },
   ];
   const allStarred = chosen.length > 0 && chosen.every((i) => i.starred);
+  const fab = !panelUp;
   const toolbar = chosen.length ? (
-    <div role="toolbar" aria-label={t('explorer.selection.label')} className="flex w-full items-center gap-0.5 rounded-xl bg-accent-soft pr-1 sm:w-auto" data-testid="selection-bar">
+    <div role="toolbar" aria-label={t('explorer.selection.label')} className="anim-pop flex w-full items-center gap-0.5 rounded-full bg-accent-soft pr-1 ring-1 ring-accent/20 ring-inset max-sm:[&>button]:w-9 sm:w-auto" data-testid="selection-bar">
       <IconButton icon="x" label={t('explorer.selection.clear')} onClick={() => setSelected(EMPTY)} />
-      <span className="mr-auto px-1 text-sm font-medium whitespace-nowrap text-ink sm:mr-2" aria-live="polite">{t('explorer.selection.n', { n: chosen.length })}</span>
+      <span className="mr-auto min-w-0 truncate px-1 text-[15px] font-semibold whitespace-nowrap text-ink tabular-nums sm:mr-2 sm:text-sm" aria-live="polite">{t('explorer.selection.n', { n: chosen.length })}</span>
       {view === 'trash' ? (
         <>
           <IconButton icon="restore" label={t('explorer.a.restore')} onClick={() => void restore(toSel(chosen))} />
@@ -418,14 +421,19 @@ function Screen({ view, folderId }: { view: ExplorerView; folderId?: string }) {
     </div>
   ) : (
     <div className="flex w-full items-center gap-1 sm:w-auto">
-      {view === 'folder' ? <Button variant="primary" icon="plus" className="sm:order-last sm:ml-1" disabled={!folder} aria-haspopup="menu" onClick={(e) => setToolMenu({ kind: 'new', rect: e.currentTarget.getBoundingClientRect() })}>{t('explorer.new')}</Button> : null}
+      {view === 'folder' ? (
+        // on a phone the main action floats above the tab bar, under the thumb; it returns to the toolbar while the transfer panel is there
+        <Button variant="primary" icon="plus" disabled={!folder} aria-haspopup="menu" data-fab={fab || undefined} style={fab ? { bottom: 'calc(var(--dock) + 10px)' } : undefined}
+          className={cx('sm:order-last sm:ml-1', fab && 'max-sm:fixed max-sm:right-4 max-sm:z-30 max-sm:h-[60px] max-sm:w-[60px] max-sm:rounded-[22px] max-sm:p-0 max-sm:shadow-[0_14px_30px_-8px_var(--grad-b)] max-sm:[&>svg]:size-7')}
+          onClick={(e) => setToolMenu({ kind: 'new', rect: e.currentTarget.getBoundingClientRect() })}><span className={cx(fab && 'max-sm:sr-only')}>{t('explorer.new')}</span></Button>
+      ) : null}
       {view === 'trash' ? <Button icon="trash" className="sm:order-last sm:ml-1" disabled={!items.length} onClick={() => setDlg({ type: 'emptyTrash' })}>{t('explorer.trash.empty')}</Button> : null}
       {view === 'search' ? <Button icon="filter" className="sm:hidden" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(!filtersOpen)}>{nFilters ? t('explorer.filters.toggleN', { n: nFilters }) : t('explorer.filters.toggle')}</Button> : null}
       <span className="flex-1" />
       {sortable ? (
         <button type="button" aria-haspopup="menu" aria-label={t('explorer.sort.label', { by: t(`explorer.sort.${sort}`) })} onClick={(e) => setToolMenu({ kind: 'sort', rect: e.currentTarget.getBoundingClientRect() })}
-          className="inline-flex h-10 items-center gap-1.5 rounded-lg px-2.5 text-sm text-ink-2 transition hover:bg-hover hover:text-ink">
-          <Glyph name="sort" size={18} /><span>{t(`explorer.sort.${sort}`)}</span><Glyph name={dir === 'asc' ? 'arrowUp' : 'arrowDown'} size={14} />
+          className="press inline-flex h-10 items-center gap-1.5 rounded-full bg-surface px-3.5 text-sm font-medium text-ink-2 shadow-(--shadow-card) hover:text-ink max-sm:order-first">
+          <Glyph name="sort" size={17} /><span>{t(`explorer.sort.${sort}`)}</span><Glyph name={dir === 'asc' ? 'arrowUp' : 'arrowDown'} size={14} />
         </button>
       ) : null}
       {view !== 'duplicates' ? <IconButton icon={mode === 'grid' ? 'list' : 'grid'} label={mode === 'grid' ? t('explorer.toList') : t('explorer.toGrid')} data-testid="view-toggle" data-mode={mode} onClick={() => setMode(mode === 'grid' ? 'list' : 'grid')} /> : null}
@@ -438,7 +446,7 @@ function Screen({ view, folderId }: { view: ExplorerView; folderId?: string }) {
   if (view === 'duplicates') body = <Duplicates onOpen={openItem} onTrash={(files) => void trash(files)} />;
   else if (listing.isLoading) body = <Skeleton mode={mode} />;
   else if (view === 'folder' && (notFound || (listing.error instanceof ApiError && listing.error.code === 'invalid_request'))) {
-    body = <EmptyState icon="folder" title={t('explorer.notFound.title')} text={t('explorer.notFound.text')} action={<Link href="/" className="inline-flex h-10 items-center gap-2 rounded-lg bg-accent px-4 text-sm font-medium text-accent-ink"><Glyph name="home" size={18} />{t('explorer.notFound.home')}</Link>} />;
+    body = <EmptyState icon="folder" title={t('explorer.notFound.title')} text={t('explorer.notFound.text')} action={<Link href="/" className="btn-grad press inline-flex h-11 items-center gap-2 rounded-[14px] px-5 text-[15px] font-semibold"><Glyph name="home" size={18} />{t('explorer.notFound.home')}</Link>} />;
   } else if (listing.error && !data) body = <ErrorState error={listing.error} onRetry={() => void listing.refetch()} />;
   else if (!items.length) {
     body = view === 'folder' ? <EmptyState icon="upload" title={t('explorer.empty.folder')} text={touch ? t('explorer.empty.folderTextTouch') : t('explorer.empty.folderText')} action={<Button variant="primary" icon="upload" onClick={() => fileInput.current?.click()}>{t('explorer.uploadFiles')}</Button>} />
@@ -448,11 +456,11 @@ function Screen({ view, folderId }: { view: ExplorerView; folderId?: string }) {
       : <EmptyState icon="clock" title={t('explorer.empty.recent')} text={t('explorer.empty.recentText')} />;
   } else {
     const row = (it: Item, index: number) => <ItemRow key={it.id} item={it} index={index} mode={mode} selected={selected.has(it.id)} tabbable={it.id === tabId} tags={tags} api={api} />;
-    const cols = 'grid grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] sm:gap-3';
+    const cols = 'stagger grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(12.5rem,1fr))] sm:gap-4';
     const nFolders = data!.folders.length;
     body = (
       <div ref={grid} role="grid" aria-label={t('explorer.listLabel', { name: title })} aria-multiselectable="true" aria-rowcount={items.length} onKeyDown={onKey}
-        onBlur={(e) => { const to = e.relatedTarget as HTMLElement | null; if (to && !e.currentTarget.contains(to) && !to.closest('[role=dialog],[role=menu]')) wantFocus.current = false; }} data-testid="listing" data-mode={mode}>
+        onBlur={(e) => { const to = e.relatedTarget as HTMLElement | null; if (to && !e.currentTarget.contains(to) && !to.closest('[role=dialog],[role=menu]')) wantFocus.current = false; }} data-testid="listing" data-mode={mode} className={cx(mode === 'list' && 'stagger card overflow-hidden')}>
         {mode === 'list' ? (
           <>
             <ListHeader sort={sortable ? sort : undefined} dir={dir} onSort={sortable ? (k) => applySort(k, sort === k && dir === 'asc' ? 'desc' : 'asc') : undefined} />
@@ -460,8 +468,8 @@ function Screen({ view, folderId }: { view: ExplorerView; folderId?: string }) {
           </>
         ) : (
           <>
-            {nFolders ? <><p className="mb-2 text-xs font-medium text-ink-3">{t('explorer.section.folders')}</p><div role="rowgroup" className={cx(cols, 'mb-5')}>{data!.folders.map(row)}</div></> : null}
-            {data!.files.length ? <><p className="mb-2 text-xs font-medium text-ink-3">{t('explorer.section.files')}</p><div role="rowgroup" className={cols}>{data!.files.map((f, i) => row(f, nFolders + i))}</div></> : null}
+            {nFolders ? <><p className={sectionCls}>{t('explorer.section.folders')}</p><div role="rowgroup" className={cx(cols, 'mb-6')}>{data!.folders.map(row)}</div></> : null}
+            {data!.files.length ? <><p className={sectionCls}>{t('explorer.section.files')}</p><div role="rowgroup" className={cols}>{data!.files.map((f, i) => row(f, nFolders + i))}</div></> : null}
           </>
         )}
         {view === 'search' && (data!.files.length >= 500 || nFolders >= 300) ? <p className="py-3 text-center text-xs text-ink-3">{t('explorer.searchCapped')}</p> : null}
@@ -477,34 +485,35 @@ function Screen({ view, folderId }: { view: ExplorerView; folderId?: string }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col" {...drag}>
-      <header className="shrink-0 border-b border-line px-3 pt-2 pb-2 sm:px-5">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <header data-scrolled={scrolled} className={cx('group/head z-10 shrink-0 px-4 pb-2.5 transition-shadow duration-300 sm:px-6 sm:pt-1', scrolled && 'hairline-b')}>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <div className="min-w-0 basis-full sm:flex-1 sm:basis-0">
             {view === 'folder' && crumbs?.length ? <Crumbs crumbs={crumbs} onDropTo={dropMove} />
-              : <h1 className="flex h-10 items-center truncate text-base font-semibold text-ink">{view === 'folder' ? (listing.isLoading ? ' ' : t('explorer.notFound.title')) : title}</h1>}
+              : <h1 className="flex min-h-11 items-center truncate text-[30px] leading-[1.15] font-bold tracking-[-0.03em] text-ink transition-[font-size] duration-300 group-data-[scrolled=true]/head:text-[19px] sm:text-xl sm:tracking-tight">{view === 'folder' ? (listing.isLoading ? ' ' : t('explorer.notFound.title')) : title}</h1>}
           </div>
           {toolbar}
         </div>
         {view === 'search' ? <Filters params={params} tags={tagsQ.data ?? []} open={filtersOpen} onChange={setSearch} /> : null}
-        {view === 'trash' && items.length ? <p className="pt-1 text-xs text-ink-3">{t('explorer.trash.note')}</p> : null}
+        {view === 'trash' && items.length ? <p className="px-1 pt-1.5 text-[13px] text-ink-3">{t('explorer.trash.note')}</p> : null}
       </header>
       <div className="relative flex min-h-0 flex-1">
         <div className="relative flex min-w-0 flex-1 flex-col">
-          <div className={cx('min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 pt-3 sm:px-5', panelUp ? 'pb-24 sm:pb-6' : 'pb-6')} onClick={(e) => { if (!(e.target as HTMLElement).closest('[role=row],button,a,input')) { setSelected(EMPTY); wantFocus.current = false; } }}>
+          <div className={cx('min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 pt-2 sm:px-6', panelUp ? 'pb-[calc(var(--dock)+7.5rem)] lg:pb-8' : 'pb-[calc(var(--dock)+5.5rem)] sm:pb-dock')}
+            onScroll={(e) => { const y = e.currentTarget.scrollTop; if (y > 28 && !scrolled) setScrolled(true); else if (y < 4 && scrolled) setScrolled(false); }} onClick={(e) => { if (!(e.target as HTMLElement).closest('[role=row],button,a,input')) { setSelected(EMPTY); wantFocus.current = false; } }}>
             {body}
           </div>
           <UploadPanel />
         </div>
         {detailsProps && wide ? (
-          <aside aria-label={t('explorer.a.details')} className="w-80 shrink-0 overflow-y-auto border-l border-line bg-surface p-4" data-testid="details">
-            <div className="mb-3 flex items-center justify-between"><h2 className="text-sm font-semibold text-ink">{t('explorer.a.details')}</h2><IconButton icon="x" label={t('common.close')} className="-my-2 -mr-2" onClick={() => setDetailsId(null)} /></div>
+          <aside aria-label={t('explorer.a.details')} className="card anim-pop mr-4 mb-4 w-[21rem] shrink-0 overflow-y-auto p-5" data-testid="details">
+            <div className="mb-3 flex items-center justify-between"><h2 className="text-[17px] font-bold tracking-tight text-ink">{t('explorer.a.details')}</h2><IconButton icon="x" label={t('common.close')} className="-my-2 -mr-2" onClick={() => setDetailsId(null)} /></div>
             <DetailsBody key={detailsProps.item.id} {...detailsProps} />
           </aside>
         ) : null}
         {dropping && folder ? (
-          <div className="pointer-events-none absolute inset-2 z-30 flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-accent bg-accent-soft/90 text-accent" data-testid="drop-overlay">
-            <Glyph name="upload" size={36} />
-            <p className="px-6 text-center text-base font-semibold">{t('explorer.dropHere', { name: title })}</p>
+          <div className="anim-pop pointer-events-none absolute inset-3 z-30 flex flex-col items-center justify-center gap-4 rounded-[28px] border-2 border-dashed border-accent bg-accent-soft/85 text-accent backdrop-blur-md" data-testid="drop-overlay">
+            <span className="btn-grad anim-float flex h-20 w-20 items-center justify-center rounded-[26px]"><Glyph name="upload" size={38} /></span>
+            <p className="px-6 text-center text-xl font-bold tracking-tight">{t('explorer.dropHere', { name: title })}</p>
           </div>
         ) : null}
       </div>

@@ -15,7 +15,7 @@ import { uploads } from './uploads.ts';
 
 export const fileKey = (id: string) => [XKEY, 'file', id];
 const Line = ({ label, children }: { label: string; children: ReactNode }) => (
-  <div className="flex gap-3 py-1.5 text-sm"><dt className="w-24 shrink-0 text-ink-3">{label}</dt><dd className="min-w-0 flex-1 break-words text-ink">{children}</dd></div>
+  <div className="flex gap-3 border-b border-line py-2.5 text-[15px] last:border-b-0 sm:text-sm"><dt className="w-24 shrink-0 text-ink-3">{label}</dt><dd className="min-w-0 flex-1 break-words text-ink">{children}</dd></div>
 );
 export const pathText = (path: Crumb[], root: string) => path.map((c, i) => (i === 0 ? root : c.name)).join(' / ');
 
@@ -72,14 +72,14 @@ export function DetailsBody({ item, tags, folderPath, onTags, onShare, onClose }
   const ext = extOf(cur.name);
   return (
     <div>
-      <div className="flex items-center gap-3">
-        <Thumb name={cur.name} kind={file ? file.kind : 'folder'} className="h-12 w-12 shrink-0 overflow-hidden rounded-lg"
+      <div className="flex flex-col items-center gap-3 pt-1 pb-2 text-center">
+        <Thumb name={cur.name} kind={file ? file.kind : 'folder'} className="h-24 w-24 shrink-0 overflow-hidden rounded-[26px] shadow-(--shadow-card)"
           src={file && file.thumb && file.scan !== 'infected' ? ownerSource(file).previewUrl('thumb') : undefined} />
-        <p className="min-w-0 flex-1 text-sm font-semibold break-words text-ink">{cur.name}</p>
+        <p className="max-w-full min-w-0 text-[17px] font-bold tracking-tight break-words text-ink">{cur.name}</p>
       </div>
-      {file?.scan === 'infected' ? <p role="alert" className="mt-3 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{t('explorer.infectedText')}</p> : null}
-      {file?.origin === 'request' ? <p className="mt-3 rounded-lg bg-accent-soft px-3 py-2 text-sm text-ink-2">{t('explorer.viaPortal')}</p> : null}
-      <dl className="mt-3">
+      {file?.scan === 'infected' ? <p role="alert" className="mt-3 rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{t('explorer.infectedText')}</p> : null}
+      {file?.origin === 'request' ? <p className="mt-3 rounded-xl bg-accent-soft px-3 py-2 text-sm text-ink-2">{t('explorer.viaPortal')}</p> : null}
+      <dl className="mt-3 rounded-2xl bg-hover/60 px-4 py-1">
         <Line label={t('explorer.d.type')}>{file ? `${t(`explorer.kind.${file.kind}`)}${ext ? ` (.${ext})` : ''}` : t('explorer.kind.folder')}</Line>
         {file ? <Line label={t('explorer.d.size')}>{formatBytes(file.size, getLocale())}<span className="text-ink-3"> · {t('explorer.d.bytes', { n: new Intl.NumberFormat(getLocale()).format(file.size) })}</span></Line> : null}
         <Line label={t('explorer.d.updated')}>{fmtDate(cur.updatedAt)}</Line>

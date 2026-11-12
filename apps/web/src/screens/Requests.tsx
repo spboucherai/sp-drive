@@ -20,15 +20,15 @@ export function Requests() {
   const [folder, setFolder] = useState<{ id: string; name: string } | null>(null);
   const create = <Button variant="primary" icon="plus" onClick={() => setPicking(true)}>{t('sharing.requests.new')}</Button>;
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-5 sm:px-6" data-testid="requests-screen">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1"><h1 className="text-xl font-semibold">{t('sharing.requests.title')}</h1><p className="mt-1 text-sm text-ink-2">{t('sharing.requests.intro')}</p></div>
+    <div className="pb-dock mx-auto w-full max-w-3xl px-4 pt-3 sm:px-6 sm:pt-7" data-testid="requests-screen">
+      <header className="flex flex-col items-start justify-between gap-3 px-1 sm:flex-row">
+        <div className="min-w-0 flex-1"><h1 className="text-[30px] leading-[1.1] font-bold tracking-[-0.03em] sm:text-[32px]">{t('sharing.requests.title')}</h1><p className="mt-1.5 text-[15px] text-ink-2">{t('sharing.requests.intro')}</p></div>
         {q.data?.length ? create : null}
       </header>
       {q.isLoading ? <Loading /> : q.error ? <ErrorState error={q.error} onRetry={() => void q.refetch()} /> : !q.data?.length ? <EmptyState icon="inbox" title={t('sharing.requests.empty')} text={t('sharing.requests.emptyText')} action={create} /> : (
-        <ul className="mt-4 space-y-3">
+        <ul className="stagger mt-5 space-y-3">
           {q.data.map((p) => (
-            <li key={p.id} className="rounded-xl border border-line bg-surface p-4" data-testid="portal-card" data-state={p.state}>
+            <li key={p.id} className="card p-5" data-testid="portal-card" data-state={p.state}>
               <div className="flex items-start gap-3">
                 <span className="mt-0.5 h-9 w-1.5 shrink-0 rounded-full" style={{ background: p.brandColor }} aria-hidden="true" />
                 <div className="min-w-0 flex-1">

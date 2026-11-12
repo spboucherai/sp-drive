@@ -19,6 +19,8 @@ import { CsvView, JsonView, TextFileView } from './TextViews.tsx';
 const PdfView = lazy(() => import('./PdfView.tsx').then((m) => ({ default: m.PdfView })));
 const MarkdownView = lazy(() => import('./MarkdownView.tsx').then((m) => ({ default: m.MarkdownView })));
 
+/** Pictures, films and pages are shown on black, whatever the theme: the content is the only light on screen. */
+const IMMERSIVE = new Set(['image', 'svg', 'heic', 'video', 'audio', 'pdf', 'office']);
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),video[controls],audio[controls],[tabindex]:not([tabindex="-1"])';
 
 function OfficeView({ source }: { source: PreviewSource }) {
@@ -128,14 +130,14 @@ export function Viewer({ source, onClose, onPrev, onNext, actions }: { source: P
   }, []);
 
   const ext = extLabel(source.name);
-  const navBtn = 'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ink-2 transition hover:bg-hover hover:text-ink';
+  const navBtn = 'press inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-2 hover:bg-hover hover:text-ink';
   return createPortal(
     <div ref={rootRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} data-testid="viewer" data-kind={source.kind}
-      className="anim-fade fixed inset-0 z-50 flex flex-col bg-bg text-ink outline-none">
-      <header className="safe-t shrink-0 border-b border-line bg-surface">
+      className={cx('anim-fade fixed inset-0 z-50 flex flex-col bg-bg text-ink outline-none', IMMERSIVE.has(source.kind) && 'dark')}>
+      <header className="safe-t z-10 shrink-0 bg-surface/80 shadow-[0_1px_0_var(--line)] backdrop-blur-xl">
         <div className="flex flex-wrap items-center gap-x-1 px-2 sm:flex-nowrap sm:gap-x-2 sm:px-3" style={{ paddingLeft: 'max(env(safe-area-inset-left), 0.5rem)', paddingRight: 'max(env(safe-area-inset-right), 0.5rem)' }}>
           <div className="order-1 min-w-0 flex-1 py-2 pl-2 sm:max-w-[38%] sm:flex-initial sm:basis-auto">
-            <h2 id={titleId} className="truncate text-sm font-semibold leading-tight" title={source.name} data-testid="viewer-name">{source.name}</h2>
+            <h2 id={titleId} className="truncate text-[15px] font-bold leading-tight tracking-tight" title={source.name} data-testid="viewer-name">{source.name}</h2>
             <p className="truncate text-xs text-ink-3" data-testid="viewer-meta">{[fmtSize(source.size), ext].filter(Boolean).join(' · ')}</p>
           </div>
           <div className="order-3 flex w-full min-w-0 items-center gap-1 sm:order-2 sm:w-auto sm:flex-1">
@@ -147,7 +149,7 @@ export function Viewer({ source, onClose, onPrev, onNext, actions }: { source: P
             {actions}
             {source.canDownload ? (
               <a href={source.contentUrl({ download: true })} download={source.name} aria-label={t('common.download')} title={t('common.download')} data-testid="viewer-download"
-                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-ink-2 transition hover:bg-hover hover:text-ink"><Glyph name="download" size={20} /></a>
+                className="press inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-2 hover:bg-hover hover:text-ink"><Glyph name="download" size={20} /></a>
             ) : null}
             <IconButton icon="x" label={t('common.close')} onClick={onClose} data-testid="viewer-close" />
           </div>
@@ -161,9 +163,9 @@ export function Viewer({ source, onClose, onPrev, onNext, actions }: { source: P
           </Suspense>
         </ViewerCtx.Provider>
         {onPrev ? <button type="button" onClick={onPrev} aria-label={t('preview.previous')} title={t('preview.previous')} data-testid="viewer-prev"
-          className="absolute left-3 top-1/2 z-20 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-line bg-raised text-ink-2 shadow-pop transition hover:text-ink sm:flex"><Glyph name="chevronLeft" size={22} /></button> : null}
+          className="absolute left-3 top-1/2 z-20 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full glass press text-ink shadow-pop sm:flex"><Glyph name="chevronLeft" size={22} /></button> : null}
         {onNext ? <button type="button" onClick={onNext} aria-label={t('preview.next')} title={t('preview.next')} data-testid="viewer-next"
-          className="absolute right-3 top-1/2 z-20 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-line bg-raised text-ink-2 shadow-pop transition hover:text-ink sm:flex"><Glyph name="chevronRight" size={22} /></button> : null}
+          className="absolute right-3 top-1/2 z-20 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full glass press text-ink shadow-pop sm:flex"><Glyph name="chevronRight" size={22} /></button> : null}
       </div>
     </div>, document.body);
 }

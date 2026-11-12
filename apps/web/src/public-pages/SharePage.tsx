@@ -3,6 +3,7 @@
 import { formatBytes, type PreviewKind } from '@spd/shared';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, get, post } from '../api.ts';
+import { Art } from '../art.tsx';
 import { Glyph } from '../glyphs.tsx';
 import { fmtDate, getLocale, useT } from '../i18n.ts';
 import { Thumb } from '../preview/Thumb.tsx';
@@ -122,9 +123,9 @@ function Gate({ token, needsPassword, locked, onOpen, onGone }: { token: string;
     }
   };
   return (
-    <form onSubmit={submit} noValidate className="mx-auto max-w-sm rounded-2xl border border-line bg-surface px-6 py-8" data-testid="gate">
-      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-soft text-accent"><Glyph name={locked ? 'clock' : 'lock'} size={28} /></div>
-      <h1 className="mt-4 text-center text-lg font-semibold">{locked ? t('public.share.locked') : t('public.share.protected')}</h1>
+    <form onSubmit={submit} noValidate className="mx-auto max-w-sm card px-6 py-8" data-testid="gate">
+      <div className="flex justify-center"><Art name={locked ? 'clock' : 'lock'} size={112} /></div>
+      <h1 className="mt-3 text-center text-2xl font-bold tracking-tight">{locked ? t('public.share.locked') : t('public.share.protected')}</h1>
       <p className="mt-2 text-center text-sm leading-relaxed text-ink-2">{locked ? t('public.share.lockedText') : t('public.share.protectedText')}</p>
       <div className="mt-5 space-y-4">
         {needsPassword ? <PField label={t('public.password')} type="password" autoComplete="off" autoFocus value={password} onChange={(e) => { setPassword(e.target.value); setError(null); }} error={error} /> : error ? <p role="alert" className="text-sm text-danger">{error}</p> : null}
@@ -173,7 +174,7 @@ function useDownload(fail: (e: unknown) => Fate) {
 function Alert({ text, onClose }: { text: string | null; onClose: () => void }) {
   const t = useT();
   return text ? (
-    <div role="alert" className="flex items-start gap-3 rounded-xl bg-warn-soft px-4 py-3 text-sm text-warn" data-testid="share-alert">
+    <div role="alert" className="flex items-start gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn" data-testid="share-alert">
       <Glyph name="warning" size={18} className="mt-px shrink-0" /><p className="min-w-0 flex-1">{text}</p>
       <button type="button" onClick={onClose} aria-label={t('public.share.dismiss')} className="-m-1 shrink-0 rounded p-1"><Glyph name="x" size={16} /></button>
     </div>
@@ -183,9 +184,9 @@ function ShareHead({ share, name, icon, sub }: { share: Opened; name: string; ic
   const t = useT();
   return (
     <header className="flex items-start gap-4">
-      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent-soft text-accent"><Glyph name={icon} size={24} /></div>
+      <div className="btn-grad flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px]"><Glyph name={icon} size={26} /></div>
       <div className="min-w-0 flex-1">
-        <h1 className="text-xl leading-snug font-semibold break-words">{name}</h1>
+        <h1 className="text-2xl leading-tight font-bold tracking-tight break-words">{name}</h1>
         {share.label && share.label !== name ? <p className="mt-0.5 text-sm break-words text-ink-2">{share.label}</p> : null}
         <p className="mt-1 text-sm text-ink-3">{[sub, share.owner ? t('public.share.sharedBy', { owner: share.owner }) : '', share.expiresAt ? t('public.share.expires', { date: fmtDate(share.expiresAt) }) : ''].filter(Boolean).join(' · ')}</p>
         {share.canDownload ? null : <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-hover px-2.5 py-1 text-xs font-medium text-ink-2" title={t('public.share.viewOnlyText')}><Glyph name="eye" size={14} />{t('public.share.viewOnly')}</p>}
@@ -208,10 +209,10 @@ function FileShare({ token, share, file, fail }: { token: string; share: Opened;
   };
   return (
     <div className="mx-auto max-w-xl space-y-4" data-testid="file-share">
-      <section className="rounded-2xl border border-line bg-surface p-5 sm:p-6">
+      <section className="card p-5 sm:p-6">
         <ShareHead share={share} name={file.name} icon={KIND_ICON[file.kind] ?? 'file'} sub={formatBytes(file.size, loc)} />
         <button type="button" onClick={open} aria-label={`${t('public.share.preview')} — ${file.name}`}
-          className="mt-5 flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-xl border border-line bg-bg">
+          className="press mt-5 flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-[22px] bg-bg ring-1 ring-line ring-inset">
           <Thumb src={file.thumb ? src.previewUrl('thumb') : undefined} name={file.name} kind={file.kind} className="h-full w-full rounded-none!" />
         </button>
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
@@ -264,11 +265,11 @@ function FolderShare({ token, share, rootId, fail }: { token: string; share: Ope
 
   return (
     <div className="space-y-4" data-testid="folder-share">
-      <section className="rounded-2xl border border-line bg-surface p-5 sm:p-6">
+      <section className="card p-5 sm:p-6">
         <ShareHead share={share} name={share.type === 'folder' ? share.root.name : ''} icon="folder" />
       </section>
       <Alert text={dl.message} onClose={() => dl.setMessage(null)} />
-      <section className="rounded-2xl border border-line bg-surface">
+      <section className="card">
         <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2 sm:px-4">
           <nav aria-label={t('public.share.breadcrumb')} className="min-w-0 flex-1">
             <ol className="flex flex-wrap items-center gap-0.5 text-sm" data-testid="crumbs">
@@ -276,7 +277,7 @@ function FolderShare({ token, share, rootId, fail }: { token: string; share: Ope
                 <li key={c.id} className="flex min-w-0 items-center gap-0.5">
                   {i ? <Glyph name="chevronRight" size={14} className="shrink-0 text-ink-3" /> : null}
                   {i === all.length - 1 ? <span aria-current="page" className="truncate px-1.5 py-1.5 font-semibold">{c.name}</span>
-                    : <button type="button" onClick={() => go(c.id)} className="max-w-40 truncate rounded-md px-1.5 py-1.5 text-ink-2 hover:bg-hover hover:text-ink">{c.name}</button>}
+                    : <button type="button" onClick={() => go(c.id)} className="max-w-40 truncate rounded-lg px-1.5 py-1.5 text-ink-2 hover:bg-hover hover:text-ink">{c.name}</button>}
                 </li>
               ))}
             </ol>
@@ -291,13 +292,13 @@ function FolderShare({ token, share, rootId, fail }: { token: string; share: Ope
             : grid ? (
               <ul className={cx('grid grid-cols-2 gap-3 p-3 sm:grid-cols-3 sm:p-4 lg:grid-cols-4', loading && 'opacity-60')} data-testid="entries">
                 {folders.map((d) => (
-                  <li key={d.id}><button type="button" onClick={() => go(d.id)} className="flex w-full flex-col overflow-hidden rounded-xl border border-line bg-bg text-left hover:border-line-strong" data-entry="folder">
+                  <li key={d.id}><button type="button" onClick={() => go(d.id)} className="press flex w-full flex-col overflow-hidden rounded-[18px] bg-bg text-left ring-1 ring-line ring-inset" data-entry="folder">
                     <span className="flex aspect-[4/3] w-full items-center justify-center text-accent"><Thumb name={d.name} kind="folder" className="h-14 w-14" /></span>
                     <span className="truncate border-t border-line bg-surface px-3 py-2.5 text-sm font-medium">{d.name}</span>
                   </button></li>
                 ))}
                 {files.map((f, i) => (
-                  <li key={f.id} className="relative overflow-hidden rounded-xl border border-line bg-bg hover:border-line-strong" data-entry="file">
+                  <li key={f.id} className="relative overflow-hidden rounded-[18px] bg-bg ring-1 ring-line ring-inset" data-entry="file">
                     <button type="button" onClick={() => void openFile(i)} aria-label={t('public.share.openItem', { name: f.name })} className="flex w-full flex-col text-left">
                       <span className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden text-ink-3"><Thumb src={f.thumb ? sourceOf(token, f, false).previewUrl('thumb') : undefined} name={f.name} kind={f.kind} className="h-full w-full rounded-none!" /></span>
                       <span className={cx('block w-full border-t border-line bg-surface py-2 pl-3', share.canDownload ? 'pr-11' : 'pr-3')}><span className="block truncate text-sm font-medium">{f.name}</span><span className="block text-xs text-ink-3">{formatBytes(f.size, loc)}</span></span>

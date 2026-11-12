@@ -27,7 +27,7 @@ function Workbook({ data }: { data: SheetPreview }) {
       <div role="tablist" aria-label={t('preview.sheets')} className="flex shrink-0 items-stretch gap-1 overflow-x-auto border-t border-line bg-surface px-2 py-1" data-noswipe>
         {data.sheets.map((s, i) => (
           <button key={i} type="button" role="tab" aria-selected={i === index} onClick={() => setIndex(i)} data-testid="sheet-tab"
-            className={cx('h-10 max-w-48 shrink-0 truncate rounded-lg px-3 text-sm font-medium transition', i === index ? 'bg-accent-soft text-accent' : 'text-ink-2 hover:bg-hover hover:text-ink')}>{s.name}</button>
+            className={cx('h-10 max-w-48 shrink-0 truncate rounded-xl px-3 text-sm font-medium transition', i === index ? 'bg-accent-soft text-accent' : 'text-ink-2 hover:bg-hover hover:text-ink')}>{s.name}</button>
         ))}
       </div>
     </>

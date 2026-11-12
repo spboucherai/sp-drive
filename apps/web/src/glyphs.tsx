@@ -35,8 +35,10 @@ const P: Record<string, string> = {
   expandAll: 'M7 9l5-5 5 5M7 15l5 5 5-5', collapseAll: 'M7 4l5 5 5-5M7 20l5-5 5 5',
   pdf: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M8.5 17.5c2-1.5 3.5-4.5 3.5-7 0 3 2 5.5 4 6-2.5 0-5.5.3-7.5 1z', doc: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M8.5 12.5h7M8.5 15.5h7M8.5 18.500h4',
   filter: 'M4 6h16M7 12h10M10 18h4',
+  sparkle: 'M12 3l1.900 5.100L19 10l-5.100 1.900L12 17l-1.900-5.100L5 10l5.100-1.900zM19 16l.8 2.200L22 19l-2.200.8L19 22l-.8-2.200L16 19l2.200-.8z',
 };
 export type GlyphName = keyof typeof P;
+export const glyphPath = (name: string): string => P[name] ?? P.file!;
 export function Glyph({ name, size = 20, ...rest }: { name: string; size?: number } & SVGProps<SVGSVGElement>) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false" {...rest}>

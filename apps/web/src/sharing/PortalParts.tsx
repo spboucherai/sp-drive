@@ -66,7 +66,7 @@ function Node({ id, name, depth, hasChildren, selected, onSelect, startOpen }: {
   const isSel = selected === realId || selected === id;
   return (
     <li role="treeitem" aria-expanded={hasChildren ? open : undefined} aria-selected={isSel}>
-      <div className={cx('flex items-center rounded-lg', isSel ? 'bg-accent-soft' : 'hover:bg-hover')} style={{ paddingLeft: depth * 18 }}>
+      <div className={cx('flex items-center rounded-xl', isSel ? 'bg-accent-soft' : 'hover:bg-hover')} style={{ paddingLeft: depth * 18 }}>
         {hasChildren ? <button type="button" aria-label={open ? t('sharing.picker.collapse', { name: label }) : t('sharing.picker.expand', { name: label })} onClick={() => setOpen((o) => !o)} className="inline-flex h-10 w-9 shrink-0 items-center justify-center text-ink-3">
           {open && q.isLoading ? <Spinner size={14} /> : <Glyph name={open ? 'chevronDown' : 'chevronRight'} size={16} />}</button> : <span className="w-9 shrink-0" />}
         <button type="button" onClick={() => onSelect({ id: realId, name: label })} className="flex min-w-0 flex-1 items-center gap-2 py-2 pr-3 text-left text-sm">

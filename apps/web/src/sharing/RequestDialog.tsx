@@ -112,7 +112,7 @@ export function RequestDialog({ folder, portal, onClose }: { folder: { id: strin
     <Dialog title={portal ? t('sharing.portal.editTitle') : t('sharing.portal.newTitle')} onClose={onClose} wide
       footer={<><Button onClick={onClose}>{t('common.cancel')}</Button><Button type="submit" form={formId} variant="primary" busy={busy} icon={portal ? 'check' : 'inbox'}>{portal ? t('common.save') : t('sharing.portal.create')}</Button></>}>
       <form id={formId} ref={form} onSubmit={submit} noValidate className="space-y-5" data-testid="portal-form">
-        <p className="flex items-center gap-2 rounded-lg bg-hover px-3 py-2 text-sm text-ink-2"><Glyph name="folder" size={18} className="shrink-0 text-accent" /><span className="min-w-0 truncate">{t('sharing.portal.target', { folder: folder.name })}</span></p>
+        <p className="flex items-center gap-2 rounded-xl bg-hover px-3 py-2 text-sm text-ink-2"><Glyph name="folder" size={18} className="shrink-0 text-accent" /><span className="min-w-0 truncate">{t('sharing.portal.target', { folder: folder.name })}</span></p>
 
         <Section title={t('sharing.portal.sPresentation')}>
           <TextField label={t('sharing.portal.title')} value={s.title} maxLength={120} onChange={(e) => up('title', e.target.value)} error={errors.title} required data-autofocus placeholder={t('sharing.portal.titlePh')} />
@@ -124,11 +124,11 @@ export function RequestDialog({ folder, portal, onClose }: { folder: { id: strin
           <TextField label={t('sharing.portal.brandName')} hint={t('sharing.portal.brandNameHint')} value={s.brandName} maxLength={80} onChange={(e) => up('brandName', e.target.value)} />
           <Field label={t('sharing.portal.brandColor')}>{(id) => (
             <div className="flex flex-wrap items-center gap-2">
-              <input id={id} type="color" value={s.brandColor} onChange={(e) => up('brandColor', e.target.value)} className="h-10 w-14 cursor-pointer rounded-lg border border-line-strong bg-surface p-1" />
+              <input id={id} type="color" value={s.brandColor} onChange={(e) => up('brandColor', e.target.value)} className="h-10 w-14 cursor-pointer rounded-xl border border-line-strong bg-surface p-1" />
               {SWATCHES.map((c) => <button key={c} type="button" aria-label={c} aria-pressed={s.brandColor.toLowerCase() === c} onClick={() => up('brandColor', c)} style={{ background: c }} className={cx('h-8 w-8 rounded-full border-2', s.brandColor.toLowerCase() === c ? 'border-ink' : 'border-transparent')} />)}
             </div>
           )}</Field>
-          <div aria-label={t('sharing.portal.preview')} role="img" className="overflow-hidden rounded-xl border border-line" data-testid="brand-preview">
+          <div aria-label={t('sharing.portal.preview')} role="img" className="overflow-hidden rounded-2xl border border-line" data-testid="brand-preview">
             <div className="px-4 py-4" style={{ background: s.brandColor, color: ink }}>
               {s.brandName ? <p className="text-xs font-semibold opacity-90">{s.brandName}</p> : null}
               <p className="text-lg leading-tight font-semibold break-words">{s.title || t('sharing.portal.titlePh')}</p>
@@ -150,7 +150,7 @@ export function RequestDialog({ folder, portal, onClose }: { folder: { id: strin
             </div>
           )}</Field>
           {portal && !portal.revokedAt ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line px-3 py-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-3 py-2.5">
               <p className="min-w-0 flex-1 text-xs text-ink-2">{t('sharing.portal.linkHidden')}</p>
               <Button size="sm" icon="refresh" onClick={() => setConfirmRotate(true)}>{t('sharing.portal.rotate')}</Button>
             </div>
@@ -218,7 +218,7 @@ export function RequestDialog({ folder, portal, onClose }: { folder: { id: strin
           <Switch label={t('sharing.portal.notify')} hint={t('sharing.portal.notifyHint')} checked={s.notify} onChange={(v) => up('notify', v)} />
           <TextArea label={t('sharing.portal.confirmation')} hint={t('sharing.portal.confirmationHint')} value={s.confirmation} maxLength={1000} rows={2} onChange={(e) => up('confirmation', e.target.value)} />
         </Section>
-        {errors.form ? <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{errors.form}</p> : null}
+        {errors.form ? <p role="alert" className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{errors.form}</p> : null}
       </form>
       {confirmRotate && portal ? <ConfirmDialog title={t('sharing.portal.rotate')} text={t('sharing.portal.rotateText')} confirmLabel={t('sharing.item.rotateConfirm')} onClose={() => setConfirmRotate(false)}
         onConfirm={async () => { const r = await post<{ url: string }>(`/requests/${portal.id}/rotate`); setRotated(true); setUrl(r.url); }} /> : null}

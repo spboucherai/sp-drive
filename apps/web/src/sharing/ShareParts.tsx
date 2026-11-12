@@ -65,7 +65,7 @@ export function ShareForm({ target, share, onDone, onCancel }: { target?: Target
         {canDownload ? <NumberField label={t('sharing.form.maxDownloads')} placeholder={t('sharing.form.unlimited')} value={maxDownloads} onChange={setMaxDownloads} max={1_000_000} error={errors.maxDownloads} /> : null}
       </div>
       <Switch label={t('sharing.form.singleUse')} hint={t('sharing.form.singleUseHint')} checked={singleUse} onChange={setSingleUse} />
-      {errors.form ? <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{errors.form}</p> : null}
+      {errors.form ? <p role="alert" className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{errors.form}</p> : null}
       <div className="flex justify-end gap-2 pt-1">
         <Button onClick={onCancel}>{t('common.cancel')}</Button>
         <Button type="submit" variant="primary" busy={busy} icon={share ? 'check' : 'link'}>{share ? t('common.save') : t('sharing.form.create')}</Button>
@@ -108,7 +108,7 @@ export function ShareItem({ share, heading }: { share: Share; heading?: ReactNod
   const live = !share.revokedAt;
   const name = share.label || share.targetName;
   return (
-    <article className="rounded-xl border border-line bg-surface p-4" data-testid="share-item" data-status={share.status}>
+    <article className="card p-5" data-testid="share-item" data-status={share.status}>
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           {heading}

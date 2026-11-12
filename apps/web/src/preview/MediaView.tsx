@@ -19,7 +19,7 @@ export function MediaView({ source }: { source: PreviewSource }) {
   if (source.kind === 'video') {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center p-0 sm:p-6">
-        <video key={attempt} src={src} controls playsInline preload="metadata" onError={onError} data-testid="video" className="max-h-full max-w-full rounded-none bg-black sm:rounded-xl" />
+        <video key={attempt} src={src} controls playsInline preload="metadata" onError={onError} data-testid="video" className="max-h-full max-w-full rounded-none bg-black sm:rounded-2xl" />
       </div>
     );
   }

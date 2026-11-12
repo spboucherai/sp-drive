@@ -444,7 +444,7 @@ function Pages({ doc, sizes }: { doc: PDFDocumentProxy; sizes: Size[] }) {
           <input value={pageText} inputMode="numeric" pattern="[0-9]*" aria-label={t('preview.page')} data-testid="pdf-page-input" enterKeyHint="go"
             onChange={(e) => setPageText(e.target.value.replace(/\D/g, '').slice(0, 6))} onFocus={(e) => e.currentTarget.select()} onBlur={submitPage}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submitPage(); e.currentTarget.select(); } }}
-            className="h-9 w-12 rounded-lg border border-line-strong bg-surface text-center text-sm tabular-nums text-ink focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25" />
+            className="h-9 w-12 rounded-xl border border-line-strong bg-surface text-center text-sm tabular-nums text-ink focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15" />
           <span className="tabular-nums" data-testid="pdf-page-count">/ {count}</span>
         </label>
         <span className="mx-1 hidden h-5 w-px shrink-0 bg-line sm:block" />
@@ -460,7 +460,7 @@ function Pages({ doc, sizes }: { doc: PDFDocumentProxy; sizes: Size[] }) {
           <input ref={input} type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('preview.searchPlaceholder')} aria-label={t('preview.searchPlaceholder')} data-testid="pdf-search-input" enterKeyHint="search"
             autoComplete="off" autoCorrect="off" spellCheck={false}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); step(e.shiftKey ? -1 : 1); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeSearch(); } }}
-            className="h-10 min-w-0 flex-1 rounded-lg border border-line-strong bg-surface px-3 text-sm text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25 sm:max-w-xs" />
+            className="h-10 min-w-0 flex-1 rounded-xl border border-line-strong bg-surface px-3 text-sm text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15 sm:max-w-xs" />
           <span className={cx('min-w-16 shrink-0 px-1 text-center text-xs tabular-nums', needle && !searching && !matches.length ? 'text-danger' : 'text-ink-2')} aria-live="polite" data-testid="pdf-search-count" data-searching={searching ? '1' : '0'}>
             {!needle ? '' : matches.length ? `${cursor + 1} / ${matches.length}${searching ? '…' : ''}` : searching ? '…' : t('preview.searchNone')}
           </span>

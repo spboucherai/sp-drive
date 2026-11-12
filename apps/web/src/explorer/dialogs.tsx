@@ -55,14 +55,14 @@ function Node({ id, name, depth, hasChildren, root, selected, expanded, blocked,
   const kids = q.data?.children ?? [];
   return (
     <li role="treeitem" aria-expanded={hasChildren ? open : undefined} aria-selected={selected === id} aria-disabled={off || undefined}>
-      <div className={cx('flex items-center rounded-lg', selected === id ? 'bg-accent-soft' : 'hover:bg-hover', off && 'opacity-45')} style={{ paddingLeft: depth * 18 }}>
+      <div className={cx('flex items-center rounded-xl', selected === id ? 'bg-accent-soft' : 'hover:bg-hover', off && 'opacity-45')} style={{ paddingLeft: depth * 18 }}>
         {hasChildren && !off
-          ? <button type="button" aria-label={open ? t('explorer.pick.collapse', { name }) : t('explorer.pick.expand', { name })} onClick={() => onToggle(id)} className="flex h-10 w-9 shrink-0 items-center justify-center rounded-lg text-ink-3 hover:text-ink">
+          ? <button type="button" aria-label={open ? t('explorer.pick.collapse', { name }) : t('explorer.pick.expand', { name })} onClick={() => onToggle(id)} className="flex h-10 w-9 shrink-0 items-center justify-center rounded-xl text-ink-3 hover:text-ink">
             {q.isFetching && !q.data ? <Spinner size={14} /> : <Glyph name={open ? 'chevronDown' : 'chevronRight'} size={16} />}
           </button>
           : <span className="w-9 shrink-0" />}
         <button type="button" disabled={off} data-folder-name={name} onClick={() => onSelect(id, name)} onDoubleClick={() => { if (hasChildren) onToggle(id); }}
-          className={cx('flex h-10 min-w-0 flex-1 items-center gap-2.5 rounded-lg pr-3 text-left text-sm', selected === id ? 'font-medium text-accent' : 'text-ink')}>
+          className={cx('flex h-10 min-w-0 flex-1 items-center gap-2.5 rounded-xl pr-3 text-left text-sm', selected === id ? 'font-medium text-accent' : 'text-ink')}>
           <Glyph name={root ? 'home' : 'folder'} size={18} className="shrink-0 opacity-80" />
           <span className="truncate">{name}</span>
         </button>
@@ -129,7 +129,7 @@ export function FolderPicker({ title, confirmLabel, blockedIds = [], allowKeepBo
         <ul role="tree" aria-label={t('explorer.pick.tree')} className="-mx-2 min-h-48">
           <li role="treeitem" aria-expanded aria-selected={sel?.id === rootId}>
             <button type="button" data-folder-name={t('explorer.root')} onClick={() => { setDest({ id: rootId, name: t('explorer.root') }); setError(null); }}
-              className={cx('flex h-10 w-full items-center gap-2.5 rounded-lg px-3 text-left text-sm', sel?.id === rootId ? 'bg-accent-soft font-medium text-accent' : 'text-ink hover:bg-hover')}>
+              className={cx('flex h-10 w-full items-center gap-2.5 rounded-xl px-3 text-left text-sm', sel?.id === rootId ? 'bg-accent-soft font-medium text-accent' : 'text-ink hover:bg-hover')}>
               <Glyph name="home" size={18} className="shrink-0 opacity-80" /><span className="truncate">{t('explorer.root')}</span>
             </button>
             <ul role="group">
@@ -140,13 +140,13 @@ export function FolderPicker({ title, confirmLabel, blockedIds = [], allowKeepBo
         </ul>
       )}
       {naming !== null && sel ? (
-        <form onSubmit={createFolder} className="mt-3 flex flex-col gap-2 rounded-xl border border-line p-3">
+        <form onSubmit={createFolder} className="mt-3 flex flex-col gap-2 rounded-2xl border border-line p-3">
           <TextField label={t('explorer.pick.newIn', { name: sel.name })} value={naming} error={nameError} maxLength={255} autoFocus autoComplete="off" onChange={(e) => { setNaming(e.target.value); setNameError(null); }} />
           <div className="flex justify-end gap-2"><Button size="sm" onClick={() => setNaming(null)}>{t('common.cancel')}</Button><Button size="sm" type="submit" variant="primary" disabled={!naming.trim()}>{t('common.create')}</Button></div>
         </form>
       ) : null}
       {sel ? <p className="mt-3 text-xs text-ink-3" aria-live="polite">{t('explorer.pick.dest', { name: sel.name })}</p> : null}
-      {error ? <p role="alert" className="mt-2 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{error.text}{error.conflict ? ` ${t('explorer.pick.keepBothHint')}` : ''}</p> : null}
+      {error ? <p role="alert" className="mt-2 rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{error.text}{error.conflict ? ` ${t('explorer.pick.keepBothHint')}` : ''}</p> : null}
     </Dialog>
   );
 }
@@ -212,7 +212,7 @@ export function TagsDialog({ file, onClose }: { file: FileItem; onClose: () => v
         <ul className="-mx-2 flex flex-col">
           {tags.data!.length === 0 ? <li className="px-2 py-3 text-sm text-ink-3">{t('explorer.tags.empty')}</li> : null}
           {tags.data!.map((g) => edit?.id === g.id ? (
-            <li key={g.id} className="my-1 rounded-xl border border-line p-3">
+            <li key={g.id} className="my-1 rounded-2xl border border-line p-3">
               <form onSubmit={saveEdit} className="flex flex-col gap-2.5">
                 <TextField label={t('explorer.tags.name')} value={edit.name} maxLength={40} error={editError} autoFocus onChange={(e) => { setEdit({ ...edit, name: e.target.value }); setEditError(null); }} />
                 <Swatches value={edit.color} onChange={(color) => setEdit({ ...edit, color })} />
@@ -220,12 +220,12 @@ export function TagsDialog({ file, onClose }: { file: FileItem; onClose: () => v
               </form>
             </li>
           ) : removing === g.id ? (
-            <li key={g.id} className="my-1 flex flex-wrap items-center gap-2 rounded-xl bg-danger-soft px-3 py-2">
+            <li key={g.id} className="my-1 flex flex-wrap items-center gap-2 rounded-2xl bg-danger-soft px-3 py-2">
               <p className="min-w-0 flex-1 text-sm text-danger">{t('explorer.tags.confirmDelete', { name: g.name, n: g.files })}</p>
               <Button size="sm" onClick={() => setRemoving(null)}>{t('common.cancel')}</Button><Button size="sm" variant="danger" onClick={() => void remove(g.id)}>{t('common.delete')}</Button>
             </li>
           ) : (
-            <li key={g.id} className="flex items-center rounded-lg hover:bg-hover">
+            <li key={g.id} className="flex items-center rounded-xl hover:bg-hover">
               <label className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-3 px-2">
                 <input type="checkbox" className="h-4 w-4 shrink-0 accent-[var(--accent)]" checked={ids.includes(g.id)} onChange={(e) => void assign(e.target.checked ? [...ids, g.id] : ids.filter((x) => x !== g.id))} />
                 <span className={cx('truncate rounded-full px-2 py-0.5 text-xs font-medium', tagStyle(g.color).chip)}>{g.name}</span>

@@ -65,7 +65,7 @@ function Profile() {
             <legend className="mb-1.5 text-sm font-medium text-ink">{t('account.profile.theme')}</legend>
             <div className="grid grid-cols-3 gap-2">
               {themes.map((x) => (
-                <label key={x.id} className={cx('flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border px-2 text-sm font-medium transition has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent',
+                <label key={x.id} className={cx('flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border px-2 text-sm font-medium transition has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent',
                   choice === x.id ? 'border-accent bg-accent-soft text-accent' : 'border-line-strong bg-surface text-ink-2 hover:bg-hover')}>
                   <input type="radio" name="theme" value={x.id} checked={choice === x.id} onChange={() => setTheme(x.id)} className="sr-only" />
                   <Glyph name={x.icon} size={18} className="shrink-0" /><span className="truncate">{t(`account.theme.${x.id}`)}</span>
@@ -127,7 +127,7 @@ function Passkeys() {
         <ul className={rows} aria-label={t('account.passkey.title')}>
           {q.data.map((p) => (
             <li key={p.id} className={row} data-testid="passkey">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent"><Glyph name="key" size={20} /></span>
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent-soft text-accent"><Glyph name="key" size={20} /></span>
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-ink"><span className="min-w-0 truncate">{p.label}</span>{p.backedUp ? <Badge tone="ok">{t('account.passkey.synced')}</Badge> : <Badge>{t('account.passkey.single')}</Badge>}</p>
                 <p className="mt-0.5 text-xs text-ink-3">{t('account.passkey.created', { date: fmtDate(p.createdAt, { dateStyle: 'medium' }) })} · {p.lastUsedAt ? t('account.passkey.lastUsed', { when: fmtRelative(p.lastUsedAt) }) : t('account.passkey.neverUsed')}</p>
@@ -167,7 +167,7 @@ function TotpSetup({ setup, onClose, onEnabled }: { setup: { challengeId: string
       <form onSubmit={submit} className="flex flex-col gap-4" noValidate>
         <p className="text-sm leading-relaxed text-ink-2">{t('account.totp.setupText')}</p>
         {/* a QR code is always dark on white, whatever the theme, so that every camera reads it */}
-        <div className="mx-auto flex h-[220px] w-[220px] items-center justify-center rounded-xl border border-line bg-white">{qr ? <img src={qr} width={220} height={220} alt={t('account.totp.qrAlt')} className="rounded-xl" /> : <Loading />}</div>
+        <div className="mx-auto flex h-[220px] w-[220px] items-center justify-center rounded-2xl border border-line bg-white">{qr ? <img src={qr} width={220} height={220} alt={t('account.totp.qrAlt')} className="rounded-2xl" /> : <Loading />}</div>
         <div><p className="mb-1.5 text-sm font-medium text-ink">{t('account.totp.secret')}</p><CopyField value={setup.secret} label={t('account.totp.secret')} /></div>
         <TextField label={t('account.totp.code')} hint={t('account.totp.codeHint')} value={code} onChange={(e) => setCode(e.currentTarget.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" maxLength={6} className="font-mono tracking-widest" error={failure} />
         <div className="flex justify-end gap-2"><Button onClick={onClose}>{t('common.cancel')}</Button><Button type="submit" variant="primary" busy={busy} disabled={code.length !== 6}>{t('account.totp.enable')}</Button></div>
@@ -244,7 +244,7 @@ function Devices() {
             const ua = summariseUA(s.userAgent, t('account.devices.unknown'));
             return (
               <li key={s.id} className={row} data-testid="session" data-current={s.current || undefined}>
-                <span className={cx('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', s.current ? 'bg-accent-soft text-accent' : 'bg-hover text-ink-2')}><Glyph name={ua.icon} size={20} /></span>
+                <span className={cx('flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl', s.current ? 'bg-accent-soft text-accent' : 'bg-hover text-ink-2')}><Glyph name={ua.icon} size={20} /></span>
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-ink"><span className="min-w-0 truncate" title={s.userAgent}>{ua.text}</span>{s.current ? <Badge tone="accent">{t('account.devices.current')}</Badge> : null}{s.method === 'recovery' ? <Badge tone="warn">{t('account.devices.recovery')}</Badge> : null}</p>
                   <p className="mt-0.5 text-xs break-words text-ink-3">{s.ip || '—'} · {s.current ? t('account.devices.activeNow') : t('account.devices.lastSeen', { when: fmtRelative(s.lastSeenAt) })} · {t('account.devices.since', { date: fmtDate(s.createdAt, { dateStyle: 'medium' }) })}</p>

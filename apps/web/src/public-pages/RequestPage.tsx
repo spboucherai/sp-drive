@@ -71,11 +71,11 @@ function PortalHeader({ head, info }: { head: Head; info: PortalInfo | null }) {
   const t = useT();
   const loc = getLocale();
   return (
-    <header className="overflow-hidden rounded-2xl border border-line bg-surface">
-      <div className="bg-accent px-5 py-6 text-accent-ink sm:px-7 sm:py-7" style={accentVars(head.brandColor)} data-testid="portal-banner">
-        {head.brandName ? <p className="text-sm font-semibold tracking-wide opacity-90">{head.brandName}</p> : null}
-        <h1 className="mt-1 text-2xl leading-tight font-semibold break-words">{head.title}</h1>
-        {head.description ? <p className="mt-2 text-[15px] leading-relaxed break-words whitespace-pre-line opacity-95">{head.description}</p> : null}
+    <header className="overflow-hidden card">
+      <div className="relative overflow-hidden bg-accent px-6 pt-8 pb-7 text-accent-ink after:pointer-events-none after:absolute after:inset-0 after:bg-[radial-gradient(120%_90%_at_100%_0%,rgb(255_255_255/0.28),transparent_60%)] sm:px-8 sm:pt-9 sm:pb-8" style={accentVars(head.brandColor)} data-testid="portal-banner">
+        {head.brandName ? <p className="relative z-10 text-[13px] font-bold tracking-[0.08em] uppercase opacity-90">{head.brandName}</p> : null}
+        <h1 className="relative z-10 mt-1 text-[30px] leading-[1.1] font-bold tracking-[-0.03em] break-words">{head.title}</h1>
+        {head.description ? <p className="relative z-10 mt-2.5 text-[16px] leading-relaxed break-words whitespace-pre-line opacity-95">{head.description}</p> : null}
       </div>
       {info ? (
         <div className="space-y-4 px-5 py-5 sm:px-7">
@@ -208,7 +208,7 @@ function Deposit({ token, storeKey, info, pending: initial, status: initialStatu
       {phase === 'resume' && pending ? <Resume pending={pending} color={head.brandColor} onAbandon={onRestart} onContinue={(m) => { files.current = m; void run(pending, true); }} /> : null}
       {(phase === 'sending' || phase === 'failed') && pending ? <Sending rows={rows} failed={phase === 'failed'} color={head.brandColor} onResume={() => void run(pending, true)} /> : null}
       {phase === 'analysing' ? (
-        <section className="rounded-2xl border border-line bg-surface px-6 py-12 text-center" role="status" aria-live="polite" data-testid="analysing">
+        <section className="card px-6 py-12 text-center" role="status" aria-live="polite" data-testid="analysing">
           <div className="flex justify-center text-ink-2"><Spinner size={30} /></div>
           <h2 className="mt-4 text-lg font-semibold">{t('public.portal.analysing')}</h2>
           <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-ink-2">{t('public.portal.analysingText')}</p>
@@ -307,7 +307,7 @@ function DepositForm({ token, info, onAdmitted }: { token: string; info: PortalI
     <form ref={formRef} onSubmit={submit} noValidate className="space-y-4" aria-labelledby={`${formId}-h`}>
       <h2 id={`${formId}-h`} className="sr-only">{t('public.portal.title')}</h2>
       {info.needsPassword || fieldDefs.length ? (
-        <section className="space-y-4 rounded-2xl border border-line bg-surface px-5 py-5 sm:px-7">
+        <section className="space-y-4 card px-5 py-5 sm:px-7">
           {info.needsPassword ? <PField label={t('public.password')} type="password" required autoComplete="off" value={values.password ?? ''} onChange={(e) => set('password', e.target.value)} error={errors.password} hint={t('public.portal.passwordHint')} /> : null}
           {fieldDefs.map((f) => (
             <PField key={f.key} label={f.label} required={f.required} optional={t('public.optional')} value={values[f.key] ?? ''} onChange={(e) => set(f.key, e.target.value)} error={errors[f.key]}
@@ -318,7 +318,7 @@ function DepositForm({ token, info, onAdmitted }: { token: string; info: PortalI
         </section>
       ) : null}
 
-      <section className="rounded-2xl border border-line bg-surface px-5 py-5 sm:px-7" aria-label={t('public.portal.files')}>
+      <section className="card px-5 py-5 sm:px-7" aria-label={t('public.portal.files')}>
         <h2 className="text-sm font-medium text-ink">{t('public.portal.files')}<span aria-hidden="true" className="text-danger"> *</span></h2>
         <input ref={fileInput} type="file" multiple className="sr-only" tabIndex={-1} aria-hidden="true" data-testid="file-input" onChange={(e) => { add(e.target.files); e.target.value = ''; }} />
         <input ref={photoInput} type="file" accept="image/*" capture="environment" className="sr-only" tabIndex={-1} aria-hidden="true" data-testid="photo-input" onChange={(e) => { add(e.target.files); e.target.value = ''; }} />
@@ -338,7 +338,7 @@ function DepositForm({ token, info, onAdmitted }: { token: string; info: PortalI
               <p className="text-sm text-ink-2" aria-live="polite">{t('public.portal.selected', { n: picked.length, size: formatBytes(total, loc) })}</p>
               {invalid.length ? <Button size="sm" variant="ghost" icon="trash" onClick={() => setPicked((c) => c.filter((f) => !problem(f)))}>{t('public.portal.removeInvalid')}</Button> : null}
             </div>
-            <ul className="mt-2 divide-y divide-line rounded-xl border border-line" data-testid="picked">
+            <ul className="mt-2 divide-y divide-line rounded-2xl border border-line" data-testid="picked">
               {picked.map((f) => {
                 const bad = problem(f);
                 return (
@@ -349,18 +349,18 @@ function DepositForm({ token, info, onAdmitted }: { token: string; info: PortalI
                       {bad ? <p className="text-sm text-danger">{bad}</p> : <p className="text-xs text-ink-3">{formatBytes(f.size, loc)}</p>}
                     </div>
                     <button type="button" aria-label={t('public.portal.remove', { name: f.name })} onClick={() => setPicked((c) => c.filter((x) => x !== f))}
-                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-ink-2 hover:bg-hover hover:text-ink"><Glyph name="x" size={18} /></button>
+                      className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-ink-2 hover:bg-hover hover:text-ink"><Glyph name="x" size={18} /></button>
                   </li>
                 );
               })}
             </ul>
           </div>
         ) : null}
-        {listError ? <p role="alert" tabIndex={-1} data-list-error className="mt-3 rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger outline-none">{listError}</p> : null}
+        {listError ? <p role="alert" tabIndex={-1} data-list-error className="mt-3 rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger outline-none">{listError}</p> : null}
       </section>
 
       {info.requireConsent || info.retentionNote ? (
-        <section className="space-y-3 rounded-2xl border border-line bg-surface px-5 py-5 sm:px-7">
+        <section className="space-y-3 card px-5 py-5 sm:px-7">
           {info.requireConsent ? (
             <div>
               <label className="flex cursor-pointer items-start gap-3">
@@ -375,7 +375,7 @@ function DepositForm({ token, info, onAdmitted }: { token: string; info: PortalI
         </section>
       ) : null}
 
-      {banner ? <p role="alert" className="rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger" data-testid="submit-error">{banner}</p> : null}
+      {banner ? <p role="alert" className="rounded-2xl bg-danger-soft px-4 py-3 text-sm text-danger" data-testid="submit-error">{banner}</p> : null}
       <Button type="submit" variant="primary" size="lg" busy={busy} icon="upload" className="h-14! w-full text-base!" style={accentVars(info.brandColor)}>
         {picked.length ? t('public.portal.sendN', { n: picked.length }) : t('public.portal.send')}
       </Button>
@@ -389,14 +389,14 @@ function Sending({ rows, failed, color, onResume }: { rows: Row[]; failed: boole
   const loc = getLocale();
   const total = rows.reduce((n, r) => n + r.size, 0), sent = rows.reduce((n, r) => n + Math.min(r.sent, r.size), 0);
   return (
-    <section className="rounded-2xl border border-line bg-surface px-5 py-5 sm:px-7" data-testid="sending">
+    <section className="card px-5 py-5 sm:px-7" data-testid="sending">
       <h2 className="text-lg font-semibold">{failed ? t('public.portal.failed') : t('public.portal.sending')}</h2>
       {failed ? (
-        <div role="alert" className="mt-3 rounded-xl bg-warn-soft px-4 py-3 text-sm text-warn">
+        <div role="alert" className="mt-3 rounded-2xl bg-warn-soft px-4 py-3 text-sm text-warn">
           <p>{t('public.portal.failedText')}</p>
           <Button className="mt-3" variant="primary" icon="refresh" onClick={onResume}>{t('public.portal.resumeBtn')}</Button>
         </div>
-      ) : <p className="mt-2 flex items-start gap-2 rounded-xl bg-warn-soft px-4 py-3 text-sm font-medium text-warn" data-testid="keep-open"><Glyph name="warning" size={18} className="mt-px shrink-0" />{t('public.portal.keepOpen')}</p>}
+      ) : <p className="mt-2 flex items-start gap-2 rounded-2xl bg-warn-soft px-4 py-3 text-sm font-medium text-warn" data-testid="keep-open"><Glyph name="warning" size={18} className="mt-px shrink-0" />{t('public.portal.keepOpen')}</p>}
       <div className="mt-5" style={accentVars(color)}>
         <div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm"><span className="font-medium">{t('public.portal.overall')}</span><span className="text-ink-2 tabular-nums">{t('public.portal.sentOf', { sent: formatBytes(sent, loc), total: formatBytes(total, loc) })} · {total ? Math.floor((sent / total) * 100) : 0} %</span></div>
         <ProgressBar value={total ? sent / total : 0} label={t('public.portal.overall')} />
@@ -432,10 +432,10 @@ function Resume({ pending, color, onContinue, onAbandon }: { pending: Pending; c
     setFound(next); setMismatch(miss);
   };
   return (
-    <section className="rounded-2xl border border-line bg-surface px-5 py-5 sm:px-7" data-testid="resume">
+    <section className="card px-5 py-5 sm:px-7" data-testid="resume">
       <h2 className="text-lg font-semibold">{t('public.portal.resume')}</h2>
       <p className="mt-2 text-sm leading-relaxed text-ink-2">{t('public.portal.resumeText', { ref: pending.ref })}</p>
-      <ul className="mt-4 divide-y divide-line rounded-xl border border-line">
+      <ul className="mt-4 divide-y divide-line rounded-2xl border border-line">
         {pending.items.map((i) => (
           <li key={i.uploadId} className="flex items-center gap-3 px-3 py-2.5">
             <Glyph name={found.has(i.uploadId) ? 'check' : 'file'} size={18} className={found.has(i.uploadId) ? 'text-ok' : 'text-ink-3'} />
@@ -464,14 +464,14 @@ function Receipt({ pending, result, color, onAnother }: { pending: Pending; resu
   const ok = result.items.filter((i) => i.status === 'accepted').length, ko = result.items.filter((i) => i.status === 'rejected').length;
   const none = ok === 0;
   return (
-    <section className="rounded-2xl border border-line bg-surface px-5 py-7 sm:px-7" data-testid="receipt">
+    <section className="card px-5 py-7 sm:px-7" data-testid="receipt">
       <div className="text-center">
         <div className={cx('mx-auto flex h-14 w-14 items-center justify-center rounded-full', none ? 'bg-danger-soft text-danger' : ko ? 'bg-warn-soft text-warn' : 'bg-ok-soft text-ok')}><Glyph name={none ? 'x' : ko ? 'warning' : 'check'} size={30} /></div>
         <h2 ref={heading} tabIndex={-1} className="mt-4 text-xl font-semibold outline-none">{none ? t('public.portal.receiptNone') : ko ? t('public.portal.receiptPartial') : t('public.portal.receipt')}</h2>
         {none ? <p className="mx-auto mt-2 max-w-sm text-sm text-ink-2">{t('public.portal.receiptNoneText')}</p> : null}
         {result.confirmationMessage ? <p className="mx-auto mt-3 max-w-md text-[15px] leading-relaxed break-words whitespace-pre-line text-ink" data-testid="confirmation">{result.confirmationMessage}</p> : null}
       </div>
-      <div className="mt-6 rounded-xl bg-bg px-4 py-4 text-center">
+      <div className="mt-6 rounded-2xl bg-bg px-4 py-4 text-center">
         <p className="text-xs font-semibold tracking-wide text-ink-3 uppercase">{t('public.portal.refLabel')}</p>
         <p className="mt-1 font-mono text-3xl font-semibold tracking-wider select-all" data-testid="receipt-ref">{result.ref}</p>
         <div className="mt-3 flex justify-center"><Button size="sm" icon={copied ? 'check' : 'copy'} onClick={async () => { if (await copyText(result.ref)) { setCopied(true); setTimeout(() => setCopied(false), 1800); } }}>{copied ? t('common.copied') : t('public.portal.copyRef')}</Button></div>
@@ -479,7 +479,7 @@ function Receipt({ pending, result, color, onAnother }: { pending: Pending; resu
         {pending.receivedAt ? <p className="mt-1 text-xs text-ink-3">{t('public.portal.date', { date: fmtDate(pending.receivedAt) })}</p> : null}
       </div>
       <p className="mt-6 text-sm font-medium">{t('public.portal.summary', { ok, ko })}</p>
-      <ul className="mt-2 divide-y divide-line rounded-xl border border-line" data-testid="receipt-files">
+      <ul className="mt-2 divide-y divide-line rounded-2xl border border-line" data-testid="receipt-files">
         {result.items.map((i, n) => (
           <li key={n} className="flex items-start gap-3 px-3 py-3" data-status={i.status}>
             <Glyph name={i.status === 'accepted' ? 'check' : i.status === 'rejected' ? 'x' : 'clock'} size={20} className={cx('mt-0.5 shrink-0', i.status === 'accepted' ? 'text-ok' : i.status === 'rejected' ? 'text-danger' : 'text-ink-3')} />

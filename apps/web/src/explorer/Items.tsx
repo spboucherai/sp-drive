@@ -70,7 +70,7 @@ export const ItemRow = memo(function ItemRow({ item, mode, selected, tabbable, t
     } : {}),
   };
   const state = cx('group relative cursor-default select-none outline-none [-webkit-touch-callout:none] [&_img]:pointer-events-none focus-visible:ring-2 focus-visible:ring-accent',
-    over ? 'bg-accent-soft ring-2 ring-accent' : selected ? 'bg-accent-soft' : 'hover:bg-hover');
+    over ? 'bg-accent-soft! ring-2 ring-accent' : selected ? 'bg-accent-soft!' : '[@media(hover:hover)]:hover:bg-hover active:bg-hover');
 
   const thumb = (cls: string) => (
     <Thumb name={item.name} kind={file ? file.kind : 'folder'} className={cls}
@@ -88,24 +88,24 @@ export const ItemRow = memo(function ItemRow({ item, mode, selected, tabbable, t
   const more = (
     <button type="button" tabIndex={-1} aria-label={t('explorer.actionsFor', { name: item.name })} aria-haspopup="menu" data-more
       onClick={(e) => { e.stopPropagation(); api.menu(item.id, e.currentTarget.getBoundingClientRect()); }} onDoubleClick={(e) => e.stopPropagation()} onPointerDown={(e) => { pointer = e.pointerType; e.stopPropagation(); }}
-      className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-ink-2 transition hover:bg-line hover:text-ink focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus:opacity-100 [@media(hover:hover)]:group-aria-selected:opacity-100">
-      <Glyph name="dots" size={20} strokeWidth={2.6} />
+      className="inline-flex h-11 w-10 shrink-0 items-center justify-center rounded-full text-ink-3 transition hover:bg-line hover:text-ink focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus:opacity-100 [@media(hover:hover)]:group-aria-selected:opacity-100">
+      <Glyph name="dots" size={22} strokeWidth={2.8} />
     </button>
   );
   const when = item.trashedAt ?? item.updatedAt;
   const size = file ? formatBytes(file.size, getLocale()) : null;
 
   if (mode === 'list') return (
-    <div {...row} className={cx(state, 'grid min-h-14 grid-cols-[minmax(0,1fr)_2.5rem] items-center gap-x-3 border-b border-line px-2 sm:min-h-12 sm:grid-cols-[minmax(0,1fr)_9.5rem_5.5rem_2.5rem] sm:px-3 [contain-intrinsic-size:auto_3.5rem] [content-visibility:auto]')}>
-      <div role="gridcell" className="flex min-w-0 items-center gap-3">
-        {thumb('h-9 w-9 shrink-0 overflow-hidden rounded-lg!')}
+    <div {...row} className={cx(state, 'grid min-h-[68px] grid-cols-[minmax(0,1fr)_2.5rem] items-center gap-x-3 pr-1.5 pl-3 transition-colors after:absolute after:right-0 after:bottom-0 after:left-[4.5rem] after:h-px after:bg-line last:after:hidden sm:min-h-[58px] sm:grid-cols-[minmax(0,1fr)_9.5rem_5.5rem_2.5rem] sm:pr-3 sm:pl-4 sm:after:left-[4.75rem] [contain-intrinsic-size:auto_4.25rem] [content-visibility:auto]')}>
+      <div role="gridcell" className="flex min-w-0 items-center gap-3.5">
+        {thumb('h-11 w-11 shrink-0 overflow-hidden rounded-[13px]! sm:h-10 sm:w-10')}
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-sm font-medium text-ink" data-name>{item.name}</span>
+            <span className="truncate text-[16px] font-medium tracking-[-0.01em] text-ink sm:text-sm sm:tracking-normal" data-name>{item.name}</span>
             {marks}
             <span className="hidden min-w-0 items-center gap-1 lg:flex">{fileTags.slice(0, 3).map((g) => <TagChip key={g.id} tag={g} small />)}</span>
           </div>
-          <div className="flex items-center gap-1.5 truncate text-xs text-ink-3 sm:hidden">
+          <div className="mt-0.5 flex items-center gap-1.5 truncate text-[13px] text-ink-3 sm:hidden">
             <span className="truncate">{size ? `${size} · ` : ''}{fmtRelative(when)}</span>
             {fileTags.slice(0, 4).map((g) => <span key={g.id} title={g.name} className={cx('h-2 w-2 shrink-0 rounded-full', tagStyle(g.color).dot)} />)}
           </div>
@@ -117,23 +117,23 @@ export const ItemRow = memo(function ItemRow({ item, mode, selected, tabbable, t
     </div>
   );
   if (!file) return (
-    <div {...row} className={cx(state, 'rounded-card border border-line bg-surface', selected && 'border-accent')}>
-      <div role="gridcell" className="flex h-14 items-center gap-2.5 pr-1 pl-3">
-        {thumb('h-8 w-8 shrink-0 rounded-lg!')}
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink" data-name>{item.name}</span>
+    <div {...row} className={cx(state, 'press rounded-card bg-surface shadow-(--shadow-card)', selected && 'ring-2 ring-accent')}>
+      <div role="gridcell" className="flex h-[64px] items-center gap-3 pr-0.5 pl-3">
+        {thumb('h-10 w-10 shrink-0 rounded-[12px]!')}
+        <span className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] text-ink" data-name>{item.name}</span>
         {marks}
         {more}
       </div>
     </div>
   );
   return (
-    <div {...row} className={cx(state, 'rounded-card border border-line bg-surface', selected && 'border-accent')}>
-      <div role="gridcell" className="flex h-full flex-col p-1.5">
-        {thumb('aspect-[4/3] w-full overflow-hidden rounded-[10px]!')}
-        <div className="flex items-center gap-1 pt-1.5 pl-1.5">
+    <div {...row} className={cx(state, 'press overflow-hidden rounded-card bg-surface shadow-(--shadow-card)', selected && 'ring-2 ring-accent')}>
+      <div role="gridcell" className="flex h-full flex-col">
+        {thumb('aspect-[4/3] w-full overflow-hidden rounded-none!')}
+        <div className="flex items-center gap-0.5 py-2 pr-0.5 pl-3.5">
           <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-1.5"><span className="truncate text-sm font-medium text-ink" data-name>{item.name}</span>{marks}</div>
-            <div className="flex items-center gap-1.5 text-xs text-ink-3">
+            <div className="flex min-w-0 items-center gap-1.5"><span className="truncate text-[15px] font-semibold tracking-[-0.01em] text-ink sm:text-sm" data-name>{item.name}</span>{marks}</div>
+            <div className="flex items-center gap-1.5 text-[13px] text-ink-3 sm:text-xs">
               <span className="truncate">{size}<span className="max-sm:hidden"> · {fmtRelative(when)}</span></span>
               {fileTags.slice(0, 4).map((g) => <span key={g.id} title={g.name} className={cx('h-2 w-2 shrink-0 rounded-full', tagStyle(g.color).dot)} />)}
             </div>
@@ -150,14 +150,14 @@ export function ListHeader({ sort, dir, onSort }: { sort?: string; dir?: string;
   const col = (key: 'name' | 'updated' | 'size', label: string, cls: string) => (
     <div role="columnheader" aria-sort={onSort && sort === key ? (dir === 'desc' ? 'descending' : 'ascending') : undefined} className={cls}>
       {onSort ? (
-        <button type="button" onClick={() => onSort(key)} className="inline-flex h-8 items-center gap-1 rounded-md px-1 hover:text-ink">
+        <button type="button" onClick={() => onSort(key)} className="inline-flex h-8 items-center gap-1 rounded-lg px-1 tracking-wide uppercase hover:text-ink">
           {label}{sort === key ? <Glyph name={dir === 'desc' ? 'arrowDown' : 'arrowUp'} size={12} /> : null}
         </button>
       ) : <span className="px-1">{label}</span>}
     </div>
   );
   return (
-    <div role="row" className="hidden grid-cols-[minmax(0,1fr)_9.5rem_5.5rem_2.5rem] items-center gap-x-3 border-b border-line px-3 text-xs font-medium text-ink-3 sm:grid">
+    <div role="row" className="hidden h-11 grid-cols-[minmax(0,1fr)_9.5rem_5.5rem_2.5rem] items-center gap-x-3 border-b border-line pr-3 pl-4 text-xs font-semibold tracking-wide text-ink-3 uppercase sm:grid">
       {col('name', t('explorer.col.name'), '')}
       {col('updated', t('explorer.col.updated'), '-ml-1')}
       {col('size', t('explorer.col.size'), 'text-right')}
@@ -169,10 +169,10 @@ export function ListHeader({ sort, dir, onSort }: { sort?: string; dir?: string;
 export function Skeleton({ mode }: { mode: ViewMode }) {
   const t = useT();
   return (
-    <div role="status" aria-label={t('common.loading')} className={cx('animate-pulse', mode === 'grid' ? 'grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(12rem,1fr))]' : 'flex flex-col')}>
+    <div role="status" aria-label={t('common.loading')} className={cx(mode === 'grid' ? 'grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(12.5rem,1fr))] sm:gap-4' : 'card flex flex-col overflow-hidden')}>
       {Array.from({ length: mode === 'grid' ? 8 : 9 }, (_, i) => mode === 'grid'
-        ? <div key={i} className="rounded-card border border-line bg-surface p-1.5"><div className="aspect-[4/3] rounded-[10px] bg-hover" /><div className="m-1.5 h-3.5 w-2/3 rounded bg-hover" /><div className="m-1.5 h-3 w-1/3 rounded bg-hover" /></div>
-        : <div key={i} className="flex h-14 items-center gap-3 border-b border-line px-3 sm:h-12"><div className="h-9 w-9 rounded-md bg-hover" /><div className="h-3.5 rounded bg-hover" style={{ width: `${30 + ((i * 17) % 40)}%` }} /></div>)}
+        ? <div key={i} className="overflow-hidden rounded-card bg-surface shadow-(--shadow-card)"><div className="skeleton aspect-[4/3]" /><div className="skeleton mx-3.5 mt-3 h-3.5 w-2/3 rounded-full" /><div className="skeleton mx-3.5 mt-2 mb-3.5 h-3 w-1/3 rounded-full" /></div>
+        : <div key={i} className="flex h-[68px] items-center gap-3.5 px-3 sm:h-[58px] sm:px-4"><div className="skeleton h-11 w-11 shrink-0 rounded-[13px] sm:h-10 sm:w-10" /><div className="flex-1"><div className="skeleton h-3.5 rounded-full" style={{ width: `${30 + ((i * 17) % 40)}%` }} /><div className="skeleton mt-2 h-3 w-24 rounded-full" /></div></div>)}
     </div>
   );
 }

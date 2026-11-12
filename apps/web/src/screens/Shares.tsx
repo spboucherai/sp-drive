@@ -21,22 +21,22 @@ export function Shares() {
   const shown = filter === 'all' ? all : all.filter((s) => s.status === filter);
   const count = (s: Share['status'] | 'all') => (s === 'all' ? all.length : all.filter((x) => x.status === s).length);
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-5 sm:px-6" data-testid="shares-screen">
-      <header>
-        <h1 className="text-xl font-semibold">{t('sharing.shares.title')}</h1>
-        <p className="mt-1 text-sm text-ink-2">{t('sharing.shares.intro')}</p>
+    <div className="pb-dock mx-auto w-full max-w-3xl px-4 pt-3 sm:px-6 sm:pt-7" data-testid="shares-screen">
+      <header className="px-1">
+        <h1 className="text-[30px] leading-[1.1] font-bold tracking-[-0.03em] sm:text-[32px]">{t('sharing.shares.title')}</h1>
+        <p className="mt-1.5 text-[15px] text-ink-2">{t('sharing.shares.intro')}</p>
       </header>
       {q.isLoading ? <Loading /> : q.error ? <ErrorState error={q.error} onRetry={() => void q.refetch()} /> : !all.length ? <EmptyState icon="link" title={t('sharing.shares.empty')} text={t('sharing.shares.emptyText')} /> : (
         <>
           <div role="group" aria-label={t('sharing.shares.filter')} className="mt-4 flex flex-wrap gap-1.5">
             {STATUSES.filter((s) => s === 'all' || count(s) > 0).map((s) => (
               <button key={s} type="button" aria-pressed={filter === s} onClick={() => setFilter(s)}
-                className={cx('h-9 rounded-full border px-3 text-sm transition', filter === s ? 'border-accent bg-accent-soft font-medium text-accent' : 'border-line-strong text-ink-2 hover:bg-hover')}>
+                className={cx('press h-10 rounded-full px-4 text-sm font-medium', filter === s ? 'grad shadow-sm' : 'bg-surface text-ink-2 ring-1 ring-inset ring-line hover:bg-hover')}>
                 {s === 'all' ? t('sharing.shares.all') : t(`sharing.status.${s}`)} <span className="tabular-nums opacity-70">{count(s)}</span>
               </button>
             ))}
           </div>
-          <div className="mt-4 space-y-3">
+          <div className="stagger mt-5 space-y-3">
             {shown.length ? shown.map((s) => (
               <ShareItem key={s.id} share={s} heading={
                 <p className="mb-1.5 flex min-w-0 items-center gap-2 text-sm">

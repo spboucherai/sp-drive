@@ -5,7 +5,7 @@ import { Glyph } from '../glyphs.tsx';
 import { useT } from '../i18n.ts';
 import { Button, CopyField, cx, Field } from '../ui.tsx';
 
-export const inputCls = 'h-10 w-full rounded-lg border border-line-strong bg-surface px-3 text-base sm:text-sm text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25 disabled:opacity-60';
+export const inputCls = 'h-10 w-full rounded-xl border border-line-strong bg-surface px-3 text-base sm:text-sm text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15 disabled:opacity-60';
 
 /** QR code drawn as inline SVG (no data: URL, nothing fetched). Always dark on white so that cameras read it in dark mode too. */
 export function QrCode({ text, size = 176, label }: { text: string; size?: number; label: string }) {
@@ -15,7 +15,7 @@ export function QrCode({ text, size = 176, label }: { text: string; size?: numbe
     for (let y = 0; y < m.size; y++) for (let x = 0; x < m.size; x++) if (m.data[y * m.size + x]) path += `M${x} ${y}h1v1h-1z`;
     return { n: m.size, d: path };
   }, [text]);
-  return <svg role="img" aria-label={label} width={size} height={size} viewBox={`-2 -2 ${n + 4} ${n + 4}`} shapeRendering="crispEdges" className="rounded-lg" data-testid="qr"><rect x={-2} y={-2} width={n + 4} height={n + 4} fill="#ffffff" /><path d={d} fill="#000000" /></svg>;
+  return <svg role="img" aria-label={label} width={size} height={size} viewBox={`-2 -2 ${n + 4} ${n + 4}`} shapeRendering="crispEdges" className="rounded-xl" data-testid="qr"><rect x={-2} y={-2} width={n + 4} height={n + 4} fill="#ffffff" /><path d={d} fill="#000000" /></svg>;
 }
 
 /** A link that the server returns once: copy it, hand it to the system share sheet, or scan it. */
@@ -25,8 +25,8 @@ export function LinkOnce({ url, title, qr }: { url: string; title: string; qr?: 
   return (
     <div className="space-y-3" data-testid="link-once">
       <CopyField value={url} label={t('sharing.link.label')} />
-      <p className="flex items-start gap-2 rounded-lg bg-warn-soft px-3 py-2.5 text-sm text-warn"><Glyph name="warning" size={18} className="mt-px shrink-0" /><span>{t('sharing.link.once')}</span></p>
-      {qr ? <div className="flex flex-col items-center gap-2 rounded-xl border border-line py-4"><QrCode text={url} label={t('sharing.link.qr')} /><p className="text-xs text-ink-3">{t('sharing.link.qrHint')}</p></div> : null}
+      <p className="flex items-start gap-2 rounded-xl bg-warn-soft px-3 py-2.5 text-sm text-warn"><Glyph name="warning" size={18} className="mt-px shrink-0" /><span>{t('sharing.link.once')}</span></p>
+      {qr ? <div className="flex flex-col items-center gap-2 rounded-2xl border border-line py-4"><QrCode text={url} label={t('sharing.link.qr')} /><p className="text-xs text-ink-3">{t('sharing.link.qrHint')}</p></div> : null}
       {canShare ? <Button icon="share" className="w-full" onClick={() => void navigator.share({ title, url }).catch(() => {})}>{t('sharing.link.native')}</Button> : null}
     </div>
   );

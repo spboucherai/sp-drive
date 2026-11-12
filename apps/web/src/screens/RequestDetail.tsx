@@ -36,14 +36,14 @@ export function RequestDetail({ id }: { id: string }) {
     [t('sharing.portal.sAfter'), [p.subfolderPerSubmission ? t('sharing.detail.subfolder') : t('sharing.detail.flat'), p.notifyOwner ? t('sharing.detail.notify') : t('sharing.detail.noNotify')].join(' · ')],
   ];
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-5 sm:px-6" data-testid="request-detail">
+    <div className="pb-dock mx-auto w-full max-w-4xl px-4 pt-3 sm:px-6 sm:pt-7" data-testid="request-detail">
       <Link href="/requests" className="inline-flex items-center gap-1 text-sm text-ink-2 hover:text-ink"><Glyph name="chevronLeft" size={16} />{t('sharing.requests.title')}</Link>
-      <header className="mt-3 overflow-hidden rounded-xl border border-line bg-surface">
+      <header className="mt-3 card overflow-hidden">
         <div className="h-1.5" style={{ background: p.brandColor }} aria-hidden="true" />
         <div className="p-4 sm:p-5">
           <div className="flex flex-wrap items-start gap-3">
             <div className="min-w-0 basis-full sm:flex-1 sm:basis-0">
-              <div className="flex flex-wrap items-center gap-2"><h1 className="min-w-0 text-xl font-semibold break-words">{p.title}</h1><PortalState state={p.state} /></div>
+              <div className="flex flex-wrap items-center gap-2"><h1 className="min-w-0 text-2xl font-bold tracking-tight break-words">{p.title}</h1><PortalState state={p.state} /></div>
               <p className="mt-0.5 text-xs text-ink-3">{t(`sharing.pstateHint.${p.state}`)}</p>
               {p.description ? <p className="mt-2 text-sm whitespace-pre-line text-ink-2">{p.description}</p> : null}
               <p className="mt-2 flex min-w-0 flex-wrap items-center gap-1 text-sm text-ink-2"><Glyph name="folder" size={16} className="shrink-0 text-ink-3" />
@@ -65,7 +65,7 @@ export function RequestDetail({ id }: { id: string }) {
           <Button size="sm" variant="ghost" icon="refresh" busy={subs.isFetching} onClick={() => void subs.refetch()}>{t('sharing.refresh')}</Button>
         </div>
         {subs.isLoading ? <Loading /> : subs.error ? <ErrorState error={subs.error} onRetry={() => void subs.refetch()} /> : !subs.data?.length ? <EmptyState icon="inbox" title={t('sharing.detail.empty')} text={t('sharing.detail.emptyText')} /> : (
-          <div className="mt-3 overflow-hidden rounded-xl border border-line bg-surface">
+          <div className="mt-3 card overflow-hidden">
             <table className="w-full text-left text-sm" data-testid="submissions">
               <thead className="hidden border-b border-line text-xs text-ink-3 sm:table-header-group"><tr>
                 <th className="px-4 py-2.5 font-medium">{t('sharing.detail.ref')}</th><th className="px-2 py-2.5 font-medium">{t('sharing.detail.depositor')}</th><th className="px-2 py-2.5 font-medium">{t('sharing.detail.date')}</th>
@@ -129,7 +129,7 @@ function SubmissionDialog({ id, portal, onClose }: { id: string; portal: Portal;
           </section>
           <section>
             <h3 className="text-xs font-semibold tracking-wide text-ink-3 uppercase">{t('sharing.detail.filesCol')}</h3>
-            <ul className="mt-2 divide-y divide-line rounded-lg border border-line" data-testid="sub-items">
+            <ul className="mt-2 divide-y divide-line rounded-xl border border-line" data-testid="sub-items">
               {s.items.map((i) => (
                 <li key={i.id} className="flex items-start gap-3 px-3 py-2.5" data-status={i.status}>
                   <Glyph name={i.status === 'placed' ? 'check' : i.status === 'rejected' ? 'x' : 'clock'} size={18} className={i.status === 'placed' ? 'mt-0.5 shrink-0 text-ok' : i.status === 'rejected' ? 'mt-0.5 shrink-0 text-danger' : 'mt-0.5 shrink-0 text-ink-3'} />

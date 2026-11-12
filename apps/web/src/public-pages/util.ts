@@ -19,7 +19,7 @@ export function inkOn(bg: string): string {
   return ratio(l, 1) >= ratio(l, lum('#0f1419')) ? '#ffffff' : '#0f1419';
 }
 /** CSS variables that make `bg-accent text-accent-ink` use a portal's colour on one element (the theme tokens are resolved at the root, so both layers are set). */
-export const accentVars = (color: string): React.CSSProperties => ({ '--accent': safeColor(color), '--accent-ink': inkOn(color), '--color-accent': safeColor(color), '--color-accent-ink': inkOn(color) }) as React.CSSProperties;
+export const accentVars = (color: string): React.CSSProperties => ({ '--accent': safeColor(color), '--accent-ink': inkOn(color), '--color-accent': safeColor(color), '--color-accent-ink': inkOn(color), '--grad-a': safeColor(color), '--grad-b': safeColor(color), '--grad-ink': inkOn(color) }) as React.CSSProperties;
 
 /** Storage key derived from a link token without containing it. */
 export function tokenKey(prefix: string, token: string): string {

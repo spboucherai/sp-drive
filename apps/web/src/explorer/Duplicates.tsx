@@ -45,7 +45,7 @@ export function Duplicates({ onOpen, onTrash }: { onOpen: (f: FileItem) => void;
           <ul className="divide-y divide-line">
             {g.files.map((f, i) => (
               <li key={f.id} className="flex items-center gap-3 px-3 py-1.5">
-                <Thumb name={f.name} kind={f.kind} className="h-9 w-9 shrink-0 overflow-hidden rounded-md" src={f.thumb && f.scan !== 'infected' ? ownerSource(f).previewUrl('thumb') : undefined} />
+                <Thumb name={f.name} kind={f.kind} className="h-9 w-9 shrink-0 overflow-hidden rounded-lg" src={f.thumb && f.scan !== 'infected' ? ownerSource(f).previewUrl('thumb') : undefined} />
                 <div className="min-w-0 flex-1">
                   <p className="flex items-center gap-2 text-sm font-medium text-ink"><span className="truncate">{f.name}</span>{i === 0 ? <Badge tone="ok">{t('explorer.dup.kept')}</Badge> : null}</p>
                   <p className="flex min-w-0 gap-1 text-xs text-ink-3"><Location file={f} /><span className="shrink-0">· {fmtDate(f.createdAt, { dateStyle: 'medium' })}</span></p>

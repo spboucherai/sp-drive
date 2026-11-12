@@ -23,7 +23,7 @@ export function ToolText({ children, ...p }: { children: ReactNode } & React.HTM
 export function ToolToggle({ active, onClick, children, testId }: { active: boolean; onClick: () => void; children: ReactNode; testId?: string }) {
   return (
     <button type="button" aria-pressed={active} onClick={onClick} data-testid={testId}
-      className={cx('inline-flex h-10 shrink-0 items-center rounded-lg px-3 text-sm font-medium transition', active ? 'bg-accent-soft text-accent' : 'text-ink-2 hover:bg-hover hover:text-ink')}>
+      className={cx('inline-flex h-10 shrink-0 items-center rounded-xl px-3 text-sm font-medium transition', active ? 'bg-accent-soft text-accent' : 'text-ink-2 hover:bg-hover hover:text-ink')}>
       {children}
     </button>
   );
@@ -133,7 +133,7 @@ export function DownloadLink({ source, primary }: { source: PreviewSource; prima
   if (!source.canDownload) return null;
   return (
     <a href={source.contentUrl({ download: true })} download={source.name} data-testid="panel-download"
-      className={cx('inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-medium transition', primary ? 'bg-accent text-accent-ink hover:brightness-110' : 'border border-line-strong bg-surface text-ink hover:bg-hover')}>
+      className={cx('inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-medium transition', primary ? 'bg-accent text-accent-ink hover:brightness-110' : 'border border-line-strong bg-surface text-ink hover:bg-hover')}>
       <Glyph name="download" size={18} />{t('common.download')}
     </a>
   );
@@ -145,7 +145,7 @@ export function Panel({ icon, tone = 'neutral', title, text, detail, children, t
         <div className={cx('flex h-14 w-14 items-center justify-center rounded-2xl', tone === 'warn' ? 'bg-warn-soft text-warn' : 'bg-accent-soft text-accent')}><Glyph name={icon} size={28} /></div>
         <h2 className="text-base font-semibold text-ink">{title}</h2>
         {text ? <p className="text-sm leading-relaxed text-ink-2">{text}</p> : null}
-        {detail ? <p className="break-words rounded-lg bg-hover px-3 py-2 font-mono text-xs text-ink-2" data-testid="panel-detail">{detail}</p> : null}
+        {detail ? <p className="break-words rounded-xl bg-hover px-3 py-2 font-mono text-xs text-ink-2" data-testid="panel-detail">{detail}</p> : null}
         {children ? <div className="mt-1 flex flex-wrap items-center justify-center gap-2">{children}</div> : null}
       </div>
     </div>

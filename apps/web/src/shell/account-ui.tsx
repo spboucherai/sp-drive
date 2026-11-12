@@ -12,11 +12,14 @@ import { Button, copyText, cx, IconButton, useToast } from '../ui.tsx';
 
 /** The SP Drive mark (same drawing as public/pwa/favicon.svg). */
 export function Mark({ size = 32 }: { size?: number }) {
+  const id = useId().replace(/:/g, '');
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true" focusable="false" className="shrink-0">
-      <rect width="64" height="64" rx="14" fill="#2456e6" />
-      <path d="M14 24a4 4 0 0 1 4-4h9l4 4h15a4 4 0 0 1 4 4v16a4 4 0 0 1-4 4H18a4 4 0 0 1-4-4z" fill="#fff" />
-      <path d="M26 37l5 5 9-10" fill="none" stroke="#2456e6" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+      <defs><linearGradient id={id} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#4f46e5" /><stop offset="1" stopColor="#9b3dea" /></linearGradient></defs>
+      <rect width="64" height="64" rx="15" fill={`url(#${id})`} />
+      <path d="M14 30v-7a4 4 0 0 1 4-4h8.3a3 3 0 0 1 2.1.9L31.5 23H46a4 4 0 0 1 4 4v3z" fill="#fff" fillOpacity=".55" />
+      <rect x="14" y="27" width="36" height="21" rx="5" fill="#fff" />
+      <path d="M25.5 37.5l4.5 4.500 8.500-9" fill="none" stroke="#5b3fe6" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -48,29 +51,33 @@ export function LanguageToggle({ signedIn = false }: { signedIn?: boolean }) {
   const t = useT();
   return (
     <button type="button" onClick={() => changeLocale(otherLocale(), signedIn)} aria-label={t('account.lang.switchTo')} title={t('account.lang.switchTo')}
-      className="inline-flex h-10 min-w-10 items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-medium text-ink-2 transition hover:bg-hover hover:text-ink">
+      className="press inline-flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-full px-3 text-sm font-semibold text-ink-2 hover:bg-hover hover:text-ink">
       <Glyph name="globe" size={18} /><span aria-hidden="true">{otherLocale().toUpperCase()}</span>
     </button>
   );
 }
 
-/** Frame of the signed-out pages: one calm card, centred, with the mark and the language / theme switches. */
+/** Frame of the signed-out pages: the mark in its light, a large title, and one glass card for the action. */
 export function AuthFrame({ title, subtitle, children, footer, wide }: { title: string; subtitle?: ReactNode; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
   const t = useT();
   return (
-    <div className="safe-t safe-b flex min-h-dvh flex-col bg-bg">
-      <header className="flex items-center justify-between px-4 py-3 sm:px-6">
-        <div className="flex items-center gap-2.5"><Mark size={28} /><span className="text-sm font-semibold tracking-tight text-ink">{t('common.appName')}</span></div>
-        <div className="flex items-center gap-1"><LanguageToggle /><ThemeToggle /></div>
+    <div className="aurora safe-t safe-b flex min-h-dvh flex-col overflow-hidden bg-bg">
+      <header className="flex items-center justify-between py-2 pr-3 pl-5 sm:px-6 sm:py-3">
+        <span className="text-[15px] font-bold tracking-tight text-ink">{t('common.appName')}</span>
+        <div className="flex items-center"><LanguageToggle /><ThemeToggle /></div>
       </header>
-      <main className="flex flex-1 items-start justify-center px-4 pt-6 pb-10 sm:items-center sm:pt-0">
-        <div className={cx('w-full', wide ? 'max-w-lg' : 'max-w-md')}>
-          <div className="rounded-2xl border border-line bg-surface p-6 shadow-sm sm:p-8">
-            <h1 className="text-xl font-semibold tracking-tight text-ink">{title}</h1>
-            {subtitle ? <p className="mt-2 text-sm leading-relaxed text-ink-2">{subtitle}</p> : null}
-            <div className="mt-6">{children}</div>
+      <main className="flex flex-1 flex-col justify-center px-5 pt-4 pb-10">
+        <div className={cx('anim-rise mx-auto w-full', wide ? 'max-w-lg' : 'max-w-md')}>
+          <div className="mb-7 px-1">
+            <span className="relative inline-flex">
+              <span aria-hidden="true" className="grad absolute inset-1 rounded-3xl opacity-60 blur-2xl" />
+              <span className="anim-float relative inline-flex"><Mark size={68} /></span>
+            </span>
+            <h1 className="mt-7 text-[34px] leading-[1.06] font-bold tracking-[-0.035em] text-ink sm:text-[40px]">{title}</h1>
+            {subtitle ? <p className="mt-3 text-[17px] leading-relaxed text-ink-2">{subtitle}</p> : null}
           </div>
-          {footer ? <div className="mt-5 text-center text-sm text-ink-2">{footer}</div> : null}
+          <div className="glass rounded-[28px] p-5 shadow-pop sm:p-7">{children}</div>
+          {footer ? <div className="mt-6 text-center text-[15px] text-ink-2">{footer}</div> : null}
         </div>
       </main>
     </div>
@@ -80,12 +87,12 @@ export function AuthFrame({ title, subtitle, children, footer, wide }: { title: 
 export function Alert({ children, tone = 'danger' }: { children: ReactNode; tone?: 'danger' | 'warn' | 'info' }) {
   const c = { danger: 'bg-danger-soft text-danger', warn: 'bg-warn-soft text-warn', info: 'bg-accent-soft text-accent' }[tone];
   return (
-    <div role={tone === 'danger' ? 'alert' : 'status'} className={cx('flex items-start gap-2.5 rounded-lg px-3 py-2.5 text-sm leading-snug', c)}>
+    <div role={tone === 'danger' ? 'alert' : 'status'} className={cx('flex items-start gap-2.5 rounded-2xl px-3.5 py-3 text-sm leading-snug', c)}>
       <Glyph name={tone === 'info' ? 'info' : 'warning'} size={18} className="mt-px shrink-0" /><div className="min-w-0">{children}</div>
     </div>
   );
 }
-export const linkCls = 'font-medium text-accent underline-offset-2 hover:underline';
+export const linkCls = 'font-semibold text-accent underline-offset-4 hover:underline';
 
 // --- recovery codes: shown once, to keep outside the device ---
 function printCodes(title: string, lines: string[]): void {
@@ -114,7 +121,7 @@ export function RecoveryCodes({ codes, email }: { codes: string[]; email?: strin
   };
   return (
     <div className="flex flex-col gap-3">
-      <ol aria-label={t('account.codes.listLabel')} data-testid="recovery-codes" className="grid grid-cols-1 gap-x-6 gap-y-1.5 rounded-xl border border-line bg-bg px-4 py-3 font-mono text-[13px] text-ink sm:grid-cols-2">
+      <ol aria-label={t('account.codes.listLabel')} data-testid="recovery-codes" className="grid grid-cols-1 gap-x-6 gap-y-2 rounded-2xl bg-hover px-4 py-3.5 font-mono text-[13px] text-ink sm:grid-cols-2">
         {codes.map((c, i) => <li key={c} className="flex items-center gap-2 whitespace-nowrap"><span className="w-5 text-right text-xs text-ink-3" aria-hidden="true">{i + 1}</span><span className="select-all tracking-wide">{c}</span></li>)}
       </ol>
       <div className="flex flex-wrap gap-2">
@@ -155,20 +162,22 @@ export function summariseUA(ua: string, unknown: string): { text: string; icon: 
 /** A titled block of a settings or administration page. */
 export function Section({ title, text, action, children }: { title: string; text?: ReactNode; action?: ReactNode; children: ReactNode }) {
   return (
-    <section className="rounded-[14px] border border-line bg-surface">
-      <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 px-4 pt-4 sm:px-5">
-        <div className="min-w-0 flex-1 basis-56"><h2 className="text-base font-semibold text-ink">{title}</h2>{text ? <p className="mt-1 text-sm leading-relaxed text-ink-2">{text}</p> : null}</div>
+    <section className="card">
+      <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 px-5 pt-5 sm:px-6">
+        <div className="min-w-0 flex-1 basis-56"><h2 className="text-[17px] font-bold tracking-tight text-ink">{title}</h2>{text ? <p className="mt-1 text-sm leading-relaxed text-ink-2">{text}</p> : null}</div>
         {action}
       </header>
-      <div className="px-4 pt-3 pb-4 sm:px-5">{children}</div>
+      <div className="px-5 pt-3 pb-5 sm:px-6">{children}</div>
     </section>
   );
 }
+/** The large title of a screen, the same everywhere. */
+export const pageTitle = 'text-[30px] leading-[1.1] font-bold tracking-[-0.03em] text-ink sm:text-[32px]';
 /** Page frame inside the shell: a title, an optional line of text, and the content at a comfortable width. */
 export function Page({ title, text, children, wide }: { title: string; text?: string; children: ReactNode; wide?: boolean }) {
   return (
-    <div className={cx('mx-auto flex w-full flex-col gap-5 px-4 py-5 sm:px-6 sm:py-7', wide ? 'max-w-6xl' : 'max-w-3xl')}>
-      <div><h1 className="text-xl font-semibold tracking-tight text-ink sm:text-2xl">{title}</h1>{text ? <p className="mt-1 text-sm text-ink-2">{text}</p> : null}</div>
+    <div className={cx('pb-dock mx-auto flex w-full flex-col gap-5 px-4 pt-3 sm:px-6 sm:pt-7', wide ? 'max-w-6xl' : 'max-w-3xl')}>
+      <div className="px-1"><h1 className={pageTitle}>{title}</h1>{text ? <p className="mt-1.5 text-[15px] text-ink-2">{text}</p> : null}</div>
       {children}
     </div>
   );

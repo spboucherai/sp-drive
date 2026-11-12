@@ -199,7 +199,7 @@ function Invites() {
 // --- system --------------------------------------------------------------------------------------------------
 function Stat({ label, value, tone, detail }: { label: string; value: ReactNode; tone?: 'ok' | 'warn' | 'danger'; detail?: ReactNode }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1 rounded-xl border border-line bg-bg px-3.5 py-3">
+    <div className="flex min-w-0 flex-col gap-1 rounded-2xl border border-line bg-bg px-3.5 py-3">
       <dt className="text-xs font-medium text-ink-3">{label}</dt>
       <dd className="flex min-w-0 flex-col gap-1">
         <span className="flex items-center gap-2 text-sm font-semibold text-ink">{tone ? <span aria-hidden="true" className={cx('h-2 w-2 shrink-0 rounded-full', tone === 'ok' ? 'bg-ok' : tone === 'warn' ? 'bg-warn' : 'bg-danger')} /> : null}<span className="min-w-0 truncate">{value}</span></span>
