@@ -13,6 +13,7 @@ const Settings = lazy(() => import('./screens/Settings.tsx').then((m) => ({ defa
 const Admin = lazy(() => import('./screens/Admin.tsx').then((m) => ({ default: m.Admin })));
 const Login = lazy(() => import('./screens/Login.tsx').then((m) => ({ default: m.Login })));
 const Invite = lazy(() => import('./screens/Invite.tsx').then((m) => ({ default: m.Invite })));
+const LinkDevice = lazy(() => import('./screens/LinkDevice.tsx').then((m) => ({ default: m.LinkDevice })));
 const Recovery = lazy(() => import('./screens/Recovery.tsx').then((m) => ({ default: m.Recovery })));
 const SharePage = lazy(() => import('./public-pages/SharePage.tsx').then((m) => ({ default: m.SharePage })));
 const RequestPage = lazy(() => import('./public-pages/RequestPage.tsx').then((m) => ({ default: m.RequestPage })));
@@ -56,6 +57,7 @@ export function App() {
         <Route path="/invite/:token">{(p) => <Invite token={p.token} />}</Route>
         <Route path="/login"><Login /></Route>
         <Route path="/recovery"><Recovery /></Route>
+        <Route path="/appareil"><LinkDevice /></Route>
         <Route><Private /></Route>
       </Switch>
     </Suspense>

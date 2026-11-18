@@ -13,9 +13,9 @@ import { ensureObject, usedBytes } from './blob.ts';
 import { config, notFound, UserError } from './config.ts';
 import { sha256File } from './crypto.ts';
 import { audit, type Db, lockOwner, sql, tx } from './db.ts';
-import { addFile, addVersion, ensurePath, fileJson, getFile, getFolder } from './tree.ts';
+import { addFile, addVersion, ensurePath, type FileRow, fileJson, getFile, getFolder } from './tree.ts';
 
-export interface UploadRow { id: string; owner_id: string; actor_user_id: string | null; item_id: string | null; folder_id: string | null; name: string; size: string; received: string; on_conflict: 'fail' | 'rename' | 'version'; status: string; file_id: string | null; expires_at: Date }
+export interface UploadRow { id: string; owner_id: string; actor_user_id: string | null; item_id: string | null; folder_id: string | null; name: string; size: string; received: string; on_conflict: 'fail' | 'rename' | 'version'; status: string; file_id: string | null; expires_at: Date; base_version_id?: string | null }
 export const uploadPath = (u: Pick<UploadRow, 'id' | 'item_id'>) => join(u.item_id ? config.quarantineDir : config.tmpDir, `up-${u.id}`);
 export const uploadJson = (u: UploadRow) => ({ id: u.id, name: u.name, size: Number(u.size), received: Number(u.received), status: u.status, fileId: u.file_id });
 
@@ -82,6 +82,8 @@ export async function sealCheck(u: UploadRow, clientSha?: string): Promise<strin
 }
 
 const Sha = z.string().regex(/^[0-9a-fA-F]{64}$/);
+/** The file changed on the server since the client last saw it: the client decides (conflict copy), nothing is overwritten. */
+const versionConflict = (f: FileRow) => new UserError('version_conflict', 'the file changed on the server', 409, { currentVersionId: f.current_version_id, sha256: f.sha256, rev: Number(f.rev ?? 0) });
 export function uploadRoutes(app: FastifyInstance): void {
   const authed = { preHandler: requireUser };
   const mine = async (t: Db, userId: string, id: string) => {
@@ -93,8 +95,9 @@ export function uploadRoutes(app: FastifyInstance): void {
   app.post('/api/v1/uploads', authed, async (req) => {
     const b = z.object({
       folderId: z.string(), name: z.string().min(1).max(1000), size: z.number().int().min(0), relativePath: z.string().max(4000).optional(),
-      onConflict: z.enum(['fail', 'rename', 'version']).default('rename'), fileId: z.uuid().optional(),
+      onConflict: z.enum(['fail', 'rename', 'version']).default('rename'), fileId: z.uuid().optional(), baseVersionId: z.uuid().optional(),
     }).parse(req.body);
+    if (b.baseVersionId && !b.fileId) throw new UserError('invalid_request', 'baseVersionId needs fileId', 400);
     const u = userOf(req);
     if (b.size > config.maxFileBytes) throw new UserError('file_too_large', 'file exceeds the maximum size', 413, { max: config.maxFileBytes });
     const row = await tx(async (t) => {
@@ -103,14 +106,15 @@ export function uploadRoutes(app: FastifyInstance): void {
       let folderId: string, name = sanitizeName(b.name), onConflict = b.onConflict;
       if (b.fileId) { // new version of a known file
         const f = await getFile(t, u.id, b.fileId);
+        if (b.baseVersionId && f.current_version_id !== b.baseVersionId) throw versionConflict(f);
         folderId = f.folder_id; name = f.name; onConflict = 'version';
       } else {
         folderId = (await getFolder(t, u.id, b.folderId)).id;
         const segs = b.relativePath ? safePathSegments(b.relativePath).slice(0, -1) : [];
         if (segs.length) folderId = await ensurePath(t, u.id, folderId, segs);
       }
-      const [r] = await t<UploadRow[]>`insert into uploads (owner_id, actor_user_id, folder_id, name, size, on_conflict, file_id, expires_at)
-        values (${u.id}, ${u.id}, ${folderId}, ${name}, ${b.size}, ${onConflict}, ${b.fileId ?? null}, now() + interval '7 days') returning *, size::text, received::text`;
+      const [r] = await t<UploadRow[]>`insert into uploads (owner_id, actor_user_id, folder_id, name, size, on_conflict, file_id, base_version_id, expires_at)
+        values (${u.id}, ${u.id}, ${folderId}, ${name}, ${b.size}, ${onConflict}, ${b.fileId ?? null}, ${b.baseVersionId ?? null}, now() + interval '7 days') returning *, size::text, received::text`;
       return r!;
     });
     return uploadJson(row);
@@ -145,7 +149,11 @@ export function uploadRoutes(app: FastifyInstance): void {
         await assertQuota(t, user.id, Number(claimed.size), id);
         const [object] = await ensureObject(t, user.id, uploadPath(claimed), Number(claimed.size), sha);
         let file, created = false;
-        if (claimed.file_id) file = await addVersion(t, user.id, claimed.file_id, object, user.id);
+        if (claimed.file_id) {
+          // optimistic concurrency: the version this content was derived from must still be the current one
+          if (claimed.base_version_id) { const cur = await getFile(t, user.id, claimed.file_id); if (cur.current_version_id !== claimed.base_version_id && cur.sha256 !== sha) throw versionConflict(cur); }
+          file = await addVersion(t, user.id, claimed.file_id, object, user.id);
+        }
         else {
           const folder = await getFolder(t, user.id, claimed.folder_id ?? 'root').catch(() => getFolder(t, user.id, 'root')); // target trashed meanwhile → root
           ({ file, created } = await addFile(t, { ownerId: user.id, folderId: folder.id, name: claimed.name, object, onConflict: claimed.on_conflict, actorId: user.id }));
@@ -164,8 +172,14 @@ export function uploadRoutes(app: FastifyInstance): void {
   });
   app.patch('/api/v1/uploads/:id/options', authed, async (req) => {
     const { id } = z.object({ id: z.uuid() }).parse(req.params);
-    const b = z.object({ onConflict: z.enum(['fail', 'rename', 'version']) }).parse(req.body);
-    const [r] = await sql`update uploads set on_conflict = ${b.onConflict} where id = ${id} and actor_user_id = ${userOf(req).id} and status = 'active' and file_id is null returning id`;
+    const b = z.object({ onConflict: z.enum(['fail', 'rename', 'version']).optional(), asNewFile: z.object({ name: z.string().min(1).max(1000) }).optional() })
+      .refine((x) => !!x.onConflict !== !!x.asNewFile, 'give onConflict or asNewFile').parse(req.body);
+    const userId = userOf(req).id;
+    // A refused new version (version_conflict) keeps its bytes: the client can turn it into a separate file next to the
+    // original (a conflict copy) without sending the content again.
+    const [r] = b.asNewFile
+      ? await sql`update uploads set file_id = null, base_version_id = null, name = ${sanitizeName(b.asNewFile.name)}, on_conflict = 'rename' where id = ${id} and actor_user_id = ${userId} and status = 'active' and file_id is not null returning id`
+      : await sql`update uploads set on_conflict = ${b.onConflict!} where id = ${id} and actor_user_id = ${userId} and status = 'active' and file_id is null returning id`;
     if (!r) throw notFound('upload not found');
     return { ok: true };
   });

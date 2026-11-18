@@ -38,6 +38,8 @@ export const config = {
   /** test hook: run the job loop inside the API process */
   inlineWorker: process.env.SPD_INLINE_WORKER === 'on',
   commit: process.env.SPD_COMMIT ?? '',
+  /** Apple application identifiers (TEAMID.bundle.id) allowed to use this site's passkeys: served in the apple-app-site-association file */
+  appleAppIds: (process.env.SPD_APPLE_APP_IDS ?? '').split(',').map((x) => x.trim()).filter((x) => /^[A-Z0-9]{10}\.[A-Za-z0-9.-]{1,155}$/.test(x)),
 };
 export const secureCookies = config.origin.startsWith('https://');
 for (const d of [config.blobDir, config.tmpDir, config.quarantineDir, config.workDir]) mkdirSync(d, { recursive: true, mode: 0o700 });

@@ -16,7 +16,9 @@ const TABS = [{ id: 'profil', icon: 'user' }, { id: 'securite', icon: 'shield' }
 type TabId = (typeof TABS)[number]['id'];
 
 interface Passkey { id: string; label: string; deviceType: string; backedUp: boolean; transports: string[]; createdAt: string; lastUsedAt: string | null }
-interface SessionRow { id: string; createdAt: string; lastSeenAt: string; ip: string; userAgent: string; method: string; current: boolean }
+interface SessionRow { id: string; createdAt: string; lastSeenAt: string; ip: string; userAgent: string; method: string; kind?: 'web' | 'device'; deviceName?: string; current: boolean }
+/** A native application names its device itself; a browser is described from its user agent. */
+const sessionLabel = (s: SessionRow, unknown: string) => (s.kind === 'device' && s.deviceName ? { text: s.deviceName, icon: 'laptop' as const } : summariseUA(s.userAgent, unknown));
 interface Security { recoveryCodesLeft: number; totpEnabled: boolean }
 interface Activity { id: string; at: string; action: string; ip: string; userAgent: string; meta: unknown }
 
@@ -241,12 +243,12 @@ function Devices() {
       {q.isLoading ? <Loading /> : q.error || !q.data ? <ErrorState error={q.error} onRetry={() => void q.refetch()} /> : !q.data.length ? <EmptyState icon="laptop" title={t('account.devices.empty')} /> : (
         <ul className={rows} aria-label={t('account.devices.title')}>
           {q.data.map((s) => {
-            const ua = summariseUA(s.userAgent, t('account.devices.unknown'));
+            const ua = sessionLabel(s, t('account.devices.unknown'));
             return (
               <li key={s.id} className={row} data-testid="session" data-current={s.current || undefined}>
                 <span className={cx('flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl', s.current ? 'bg-accent-soft text-accent' : 'bg-hover text-ink-2')}><Glyph name={ua.icon} size={20} /></span>
                 <div className="min-w-0 flex-1">
-                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-ink"><span className="min-w-0 truncate" title={s.userAgent}>{ua.text}</span>{s.current ? <Badge tone="accent">{t('account.devices.current')}</Badge> : null}{s.method === 'recovery' ? <Badge tone="warn">{t('account.devices.recovery')}</Badge> : null}</p>
+                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-ink"><span className="min-w-0 truncate" title={s.userAgent}>{ua.text}</span>{s.current ? <Badge tone="accent">{t('account.devices.current')}</Badge> : null}{s.method === 'recovery' ? <Badge tone="warn">{t('account.devices.recovery')}</Badge> : null}{s.kind === 'device' ? <Badge>{t('account.devices.app')}</Badge> : null}</p>
                   <p className="mt-0.5 text-xs break-words text-ink-3">{s.ip || '—'} · {s.current ? t('account.devices.activeNow') : t('account.devices.lastSeen', { when: fmtRelative(s.lastSeenAt) })} · {t('account.devices.since', { date: fmtDate(s.createdAt, { dateStyle: 'medium' }) })}</p>
                 </div>
                 {s.current ? null : <Button size="sm" className="h-10" onClick={() => setRevoking(s)} aria-label={t('account.devices.revokeLabel', { name: ua.text })}>{t('account.devices.revoke')}</Button>}
@@ -255,7 +257,7 @@ function Devices() {
           })}
         </ul>
       )}
-      {revoking ? <ConfirmDialog danger title={t('account.devices.revokeTitle')} text={t('account.devices.revokeText', { name: summariseUA(revoking.userAgent, t('account.devices.unknown')).text })} confirmLabel={t('account.devices.revoke')} onClose={() => setRevoking(null)}
+      {revoking ? <ConfirmDialog danger title={t('account.devices.revokeTitle')} text={t('account.devices.revokeText', { name: sessionLabel(revoking, t('account.devices.unknown')).text })} confirmLabel={t('account.devices.revoke')} onClose={() => setRevoking(null)}
         onConfirm={async () => { await del(`/account/sessions/${revoking.id}`); await reload(); toast(t('account.devices.revoked'), { tone: 'ok' }); }} /> : null}
       {all ? <ConfirmDialog danger title={t('account.devices.revokeOthers')} text={t('account.devices.revokeOthersText')} confirmLabel={t('account.devices.revokeOthersConfirm')} onClose={() => setAll(false)}
         onConfirm={async () => { const r = await post<{ revoked: number }>('/account/sessions/revoke-others'); await reload(); toast(t('account.devices.revokedN', { n: r.revoked }), { tone: 'ok' }); }} /> : null}

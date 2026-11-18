@@ -1,6 +1,7 @@
 import postgres from 'postgres';
 import { config } from './config.ts';
 import * as m001 from './migrations/001_init.ts';
+import * as m002 from './migrations/002_native_clients.ts';
 
 export const sql = postgres(config.databaseUrl, { max: 12, idle_timeout: 30, onnotice: () => {}, types: { bigint: postgres.BigInt } });
 export type Sql = typeof sql;
@@ -8,7 +9,7 @@ export type Sql = typeof sql;
 export type Db = postgres.Sql | postgres.TransactionSql;
 export const tx = <T>(fn: (t: postgres.TransactionSql) => Promise<T>): Promise<T> => sql.begin(fn) as Promise<T>;
 
-export const MIGRATIONS = [m001];
+export const MIGRATIONS = [m001, m002];
 
 export async function migrate(target?: string): Promise<string[]> {
   await sql`create table if not exists schema_migrations (id text primary key, applied_at timestamptz not null default now())`;

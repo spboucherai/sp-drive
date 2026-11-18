@@ -64,6 +64,7 @@ const commands: Record<string, () => Promise<void>> = {
       await t`delete from files where owner_id = ${u.id}`;
       await t`delete from folders where owner_id = ${u.id}`;
       await t`delete from storage_objects where owner_id = ${u.id}`;
+      await t`delete from sync_tombstones where owner_id = ${u.id}`;
       await t`delete from users where id = ${u.id}`;
       await t`insert into audit_events (actor_kind, action, target_type, target_id) values ('system', 'account.deleted', 'user', ${u.id})`;
       return k.map((r) => r.storage_key);

@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes, randomInt, randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import '@fastify/cookie';
 import {
@@ -13,9 +13,11 @@ import { type Actor, audit, type Db, notify, sql, tx } from './db.ts';
 
 export const COOKIE = secureCookies ? '__Host-spd' : 'spd';
 const ABSOLUTE_DAYS = 30, IDLE_DAYS = 14, ROTATE_HOURS = 24, REAUTH_MIN = 5, RECOVERY_SESSION_MIN = 20;
+// device sessions (native clients): no absolute end while the device keeps syncing, closed after a long silence
+const DEVICE_DAYS = 400, DEVICE_IDLE_DAYS = 90, DEVICE_LINK_MIN = 10;
 
 export interface User { id: string; email: string; display_name: string; role: 'admin' | 'user'; locale: string }
-export interface Session { id: string; method: 'passkey' | 'recovery'; reauth_at: Date | null; user: User }
+export interface Session { id: string; method: 'passkey' | 'recovery'; kind: 'web' | 'device'; reauth_at: Date | null; user: User }
 declare module 'fastify' { interface FastifyRequest { session?: Session } interface FastifyContextConfig { allowRecovery?: boolean } }
 
 export const actorOf = (req: FastifyRequest): Actor => ({
@@ -34,19 +36,41 @@ async function startSession(t: Db, req: FastifyRequest, reply: FastifyReply, use
       ${String(req.headers['user-agent'] ?? '').slice(0, 300)})`;
   setCookie(reply, token, method === 'recovery' ? RECOVERY_SESSION_MIN * 60 : ABSOLUTE_DAYS * 86400);
 }
+/** Printable device name: what the owner will read in the list of sessions. */
+const cleanDeviceName = (raw: string) => raw.normalize('NFC').replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+/** Open a device session and return its bearer token (the only time it exists in clear). `fresh`: a passkey was just used. */
+async function startDeviceSession(t: Db, req: FastifyRequest, userId: string, deviceName: string, fresh: boolean): Promise<string> {
+  const token = newToken();
+  await t`insert into sessions (user_id, token_hash, method, kind, device_name, expires_at, reauth_at, ip, user_agent)
+    values (${userId}, ${tokenHash(token)}, 'passkey', 'device', ${cleanDeviceName(deviceName)}, now() + ${`${DEVICE_DAYS} days`}::interval, ${fresh ? new Date() : null}, ${req.ip},
+      ${String(req.headers['user-agent'] ?? '').slice(0, 300)})`;
+  return token;
+}
 
-interface SessionRow { id: string; method: 'passkey' | 'recovery'; reauth_at: Date | null; rotated_at: Date; expires_at: Date; user_id: string; email: string; display_name: string; role: 'admin' | 'user'; locale: string; via_prev: boolean }
+interface SessionRow { id: string; method: 'passkey' | 'recovery'; kind: 'web' | 'device'; reauth_at: Date | null; rotated_at: Date; expires_at: Date; user_id: string; email: string; display_name: string; role: 'admin' | 'user'; locale: string; via_prev: boolean }
+/** A device session, designated by its bearer token. Never rotated; its end slides while it is used. */
+async function loadDeviceSession(token: string): Promise<Session | undefined> {
+  const [s] = await sql<SessionRow[]>`
+    update sessions s set last_seen_at = now(), expires_at = greatest(s.expires_at, now() + ${`${DEVICE_DAYS - 30} days`}::interval) from users u
+    where u.id = s.user_id and u.disabled_at is null and s.revoked_at is null and s.expires_at > now() and s.kind = 'device'
+      and s.last_seen_at > now() - ${`${DEVICE_IDLE_DAYS} days`}::interval and s.token_hash = ${tokenHash(token)}
+    returning s.id, s.method, s.kind, s.reauth_at, s.rotated_at, s.expires_at, u.id as user_id, u.email, u.display_name, u.role, u.locale, false as via_prev`;
+  return s ? { id: s.id, method: s.method, kind: 'device', reauth_at: s.reauth_at, user: { id: s.user_id, email: s.email, display_name: s.display_name, role: s.role, locale: s.locale } } : undefined;
+}
+/** True when the request carries a bearer token: such a request cannot be forged by another site (no ambient credential). */
+export const hasBearer = (req: FastifyRequest): boolean => /^Bearer [A-Za-z0-9_-]{20,64}$/.test(String(req.headers.authorization ?? ''));
 /** Resolve the session cookie. Rotates the token once a day; the previous token stays valid one minute for requests in flight. */
 export async function loadSession(req: FastifyRequest, reply: FastifyReply): Promise<Session | undefined> {
+  if (hasBearer(req)) return loadDeviceSession(String(req.headers.authorization).slice(7)); // a bearer never falls back to the cookie
   const token = req.cookies[COOKIE];
   if (!token || token.length > 100) return undefined;
   const h = tokenHash(token);
   const [s] = await sql<SessionRow[]>`
     update sessions s set last_seen_at = now() from users u
-    where u.id = s.user_id and u.disabled_at is null and s.revoked_at is null and s.expires_at > now()
+    where u.id = s.user_id and u.disabled_at is null and s.revoked_at is null and s.expires_at > now() and s.kind = 'web'
       and s.last_seen_at > now() - ${`${IDLE_DAYS} days`}::interval
       and (s.token_hash = ${h} or (s.prev_token_hash = ${h} and s.prev_valid_until > now()))
-    returning s.id, s.method, s.reauth_at, s.rotated_at, s.expires_at, u.id as user_id, u.email, u.display_name, u.role, u.locale, (s.token_hash <> ${h}) as via_prev`;
+    returning s.id, s.method, s.kind, s.reauth_at, s.rotated_at, s.expires_at, u.id as user_id, u.email, u.display_name, u.role, u.locale, (s.token_hash <> ${h}) as via_prev`;
   if (!s) return undefined;
   if (!s.via_prev && s.method === 'passkey' && Date.now() - s.rotated_at.getTime() > ROTATE_HOURS * 3600_000) {
     const next = newToken();
@@ -54,7 +78,7 @@ export async function loadSession(req: FastifyRequest, reply: FastifyReply): Pro
       where id = ${s.id} and token_hash = ${h} returning id`;
     if (r) setCookie(reply, next, Math.max(60, Math.floor((s.expires_at.getTime() - Date.now()) / 1000)));
   }
-  return { id: s.id, method: s.method, reauth_at: s.reauth_at, user: { id: s.user_id, email: s.email, display_name: s.display_name, role: s.role, locale: s.locale } };
+  return { id: s.id, method: s.method, kind: 'web', reauth_at: s.reauth_at, user: { id: s.user_id, email: s.email, display_name: s.display_name, role: s.role, locale: s.locale } };
 }
 
 /** preHandler: a signed-in account. A recovery session may only reach routes that opt in. */
@@ -149,6 +173,10 @@ const liveInvite = async (t: Db, token: string, lock = false): Promise<Invite> =
 
 const Token = z.string().min(20).max(100);
 const Label = z.string().trim().max(60).optional();
+const NativeClient = z.object({ kind: z.literal('native'), name: z.string().trim().min(1).max(120) });
+/** Code a device shows for linking: no ambiguous characters; it grants nothing by itself. */
+const userCode = () => { const s = Array.from({ length: 8 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[randomInt(32)]).join(''); return `${s.slice(0, 4)}-${s.slice(4)}`; };
+const normCode = (raw: string) => { const s = raw.toUpperCase().replace(/[^A-Z0-9]/g, ''); return `${s.slice(0, 4)}-${s.slice(4, 8)}`; };
 const strict = { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } };
 const veryStrict = { config: { rateLimit: { max: 8, timeWindow: '15 minutes' } } };
 
@@ -161,7 +189,7 @@ export function authRoutes(app: FastifyInstance): void {
     const s = req.session;
     if (!s) return { authenticated: false };
     const [q] = await sql<{ limit_bytes: string }[]>`select limit_bytes::text from quotas where user_id = ${s.user.id}`;
-    return { authenticated: true, recovery: s.method === 'recovery', user: s.user, quota: { limit: Number(q?.limit_bytes ?? 0), used: await usedBytes(sql, s.user.id) },
+    return { authenticated: true, recovery: s.method === 'recovery', kind: s.kind, user: s.user, quota: { limit: Number(q?.limit_bytes ?? 0), used: await usedBytes(sql, s.user.id) },
       freshAuth: !!s.reauth_at && Date.now() - s.reauth_at.getTime() < REAUTH_MIN * 60_000 };
   });
 
@@ -208,22 +236,84 @@ export function authRoutes(app: FastifyInstance): void {
     return { challengeId: await putChallenge('login', options.challenge), options };
   });
   app.post('/api/v1/auth/login/verify', strict, async (req, reply) => {
-    const b = z.object({ challengeId: z.uuid(), response: z.any() }).parse(req.body);
+    const b = z.object({ challengeId: z.uuid(), response: z.any(), client: NativeClient.optional() }).parse(req.body);
     const ch = await takeChallenge(b.challengeId, 'login');
     let pk: Passkey;
     try { pk = await verifyAssertion(b.response, ch.challenge); } catch (e) {
       await audit(sql, actorOf(req), 'auth.login_failed', { meta: { method: 'passkey' } });
       throw e;
     }
-    await tx(async (t) => {
-      await startSession(t, req, reply, pk.user_id, 'passkey');
-      await audit(t, { ...actorOf(req), kind: 'user', userId: pk.user_id }, 'auth.login', { meta: { method: 'passkey', passkey: pk.id } });
+    // a native client gets a device session: its token comes back in the answer and no cookie is set
+    const token = await tx(async (t) => {
+      const tok = b.client ? await startDeviceSession(t, req, pk.user_id, b.client.name, true) : (await startSession(t, req, reply, pk.user_id, 'passkey'), undefined);
+      await audit(t, { ...actorOf(req), kind: 'user', userId: pk.user_id }, 'auth.login', { meta: { method: 'passkey', passkey: pk.id, ...(b.client ? { device: cleanDeviceName(b.client.name) } : {}) } });
+      return tok;
     });
-    return { ok: true };
+    return token ? { ok: true, token } : { ok: true };
   });
   app.post('/api/v1/auth/logout', { config: { allowRecovery: true } }, async (req, reply) => {
     if (req.session) { await sql`update sessions set revoked_at = now() where id = ${req.session.id}`; await audit(sql, actorOf(req), 'auth.logout'); }
     reply.clearCookie(COOKIE, { path: '/' });
+    return { ok: true };
+  });
+
+  // --- device linking: a native client without a passkey on the device shows a code; a signed-in browser approves it ---
+  app.post('/api/v1/auth/device/start', veryStrict, async (req) => {
+    const b = z.object({ name: z.string().trim().min(1).max(120) }).parse(req.body);
+    await sql`delete from device_links where expires_at < now() - interval '1 day'`;
+    const deviceCode = newToken();
+    let code = userCode();
+    for (let i = 0; i < 5; i++) {
+      const [r] = await sql`insert into device_links (device_hash, user_code, device_name, ip, user_agent, expires_at)
+        values (${tokenHash(deviceCode)}, ${code}, ${cleanDeviceName(b.name)}, ${req.ip}, ${String(req.headers['user-agent'] ?? '').slice(0, 300)}, now() + ${`${DEVICE_LINK_MIN} minutes`}::interval)
+        on conflict (user_code) do nothing returning id`;
+      if (r) break;
+      code = userCode();
+      if (i === 4) throw new UserError('busy', 'try again', 503);
+    }
+    return { deviceCode, userCode: code, verifyUrl: `${config.origin}/appareil?code=${code}`, expiresInS: DEVICE_LINK_MIN * 60, intervalS: 2 };
+  });
+  /** The device asks whether its code was approved. The token is handed over exactly once. */
+  app.post('/api/v1/auth/device/poll', { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (req) => {
+    const b = z.object({ deviceCode: Token }).parse(req.body);
+    return tx(async (t) => {
+      const [l] = await t<{ id: string; status: string; user_id: string | null; device_name: string; expired: boolean }[]>`
+        select id, status, user_id, device_name, expires_at < now() as expired from device_links where device_hash = ${tokenHash(b.deviceCode)} for update`;
+      if (!l || l.status === 'consumed') return { status: 'expired' as const };
+      if (l.status === 'denied') return { status: 'denied' as const };
+      if (l.expired) return { status: 'expired' as const };
+      if (l.status !== 'approved' || !l.user_id) return { status: 'pending' as const };
+      const [u] = await t`select 1 from users where id = ${l.user_id} and disabled_at is null`;
+      if (!u) return { status: 'denied' as const };
+      const token = await startDeviceSession(t, req, l.user_id, l.device_name, false);
+      await t`update device_links set status = 'consumed' where id = ${l.id}`;
+      await audit(t, { ...actorOf(req), kind: 'user', userId: l.user_id }, 'auth.login', { meta: { method: 'device_link', device: l.device_name } });
+      return { status: 'approved' as const, token };
+    });
+  });
+  const pendingLink = async (t: Db, raw: string) => {
+    const [l] = await t<{ id: string; device_name: string; ip: string; created_at: Date }[]>`select id, device_name, ip, created_at from device_links
+      where user_code = ${normCode(raw)} and status = 'pending' and expires_at > now()`;
+    if (!l) throw new UserError('device_code_invalid', 'this code is unknown or expired', 404);
+    return l;
+  };
+  app.get('/api/v1/auth/device/info', { ...authed, ...strict }, async (req) => {
+    const q = z.object({ code: z.string().min(8).max(20) }).parse(req.query);
+    const l = await pendingLink(sql, q.code);
+    return { name: l.device_name, ip: l.ip, createdAt: l.created_at };
+  });
+  /** Approving a device is as sensitive as adding a passkey: it needs a passkey assertion made in the last minutes, from a browser session. */
+  app.post('/api/v1/auth/device/decide', { ...authed, ...strict }, async (req) => {
+    const b = z.object({ code: z.string().min(8).max(20), approve: z.boolean() }).parse(req.body);
+    const u = userOf(req);
+    if (req.session!.kind !== 'web') throw new UserError('forbidden', 'a device cannot approve another device', 403);
+    if (b.approve) requireFreshAuth(req);
+    await tx(async (t) => {
+      const l = await pendingLink(t, b.code);
+      await t`update device_links set status = ${b.approve ? 'approved' : 'denied'}, user_id = ${u.id}, expires_at = least(expires_at, now() + interval '2 minutes') where id = ${l.id} and status = 'pending'`;
+      await audit(t, actorOf(req), b.approve ? 'account.device_approved' : 'account.device_denied', { meta: { device: l.device_name } });
+      if (b.approve) await notify(t, u.id, 'security.device_linked', { name: l.device_name, ip: l.ip });
+    });
     return { ok: true };
   });
 
@@ -324,9 +414,10 @@ export function authRoutes(app: FastifyInstance): void {
 
   // --- sessions / devices ---
   app.get('/api/v1/account/sessions', authed, async (req) =>
-    (await sql<{ id: string; created_at: Date; last_seen_at: Date; ip: string; user_agent: string; method: string }[]>`select id, created_at, last_seen_at, ip, user_agent, method from sessions
-      where user_id = ${userOf(req).id} and revoked_at is null and expires_at > now() order by last_seen_at desc`)
-      .map((s) => ({ id: s.id, createdAt: s.created_at, lastSeenAt: s.last_seen_at, ip: s.ip, userAgent: s.user_agent, method: s.method, current: s.id === req.session!.id })));
+    (await sql<{ id: string; created_at: Date; last_seen_at: Date; ip: string; user_agent: string; method: string; kind: string; device_name: string }[]>`select id, created_at, last_seen_at, ip, user_agent, method, kind, device_name from sessions
+      where user_id = ${userOf(req).id} and revoked_at is null and expires_at > now()
+        and last_seen_at > now() - (case when kind = 'device' then ${`${DEVICE_IDLE_DAYS} days`}::interval else ${`${IDLE_DAYS} days`}::interval end) order by last_seen_at desc`)
+      .map((s) => ({ id: s.id, createdAt: s.created_at, lastSeenAt: s.last_seen_at, ip: s.ip, userAgent: s.user_agent, method: s.method, kind: s.kind, deviceName: s.device_name, current: s.id === req.session!.id })));
   app.delete('/api/v1/account/sessions/:id', authed, async (req) => {
     const { id } = z.object({ id: z.uuid() }).parse(req.params);
     const [r] = await sql`update sessions set revoked_at = now() where id = ${id} and user_id = ${userOf(req).id} and revoked_at is null returning id`;

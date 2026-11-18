@@ -7,20 +7,23 @@ import type { Db } from './db.ts';
 import { enqueue } from './jobs.ts';
 
 export type OnConflict = 'fail' | 'rename' | 'version';
-export interface FolderRow { id: string; owner_id: string; parent_id: string | null; name: string; name_key: string; starred_at: Date | null; trashed_at: Date | null; trash_root: string | null; created_at: Date; updated_at: Date }
+export interface FolderRow { id: string; owner_id: string; parent_id: string | null; name: string; name_key: string; starred_at: Date | null; trashed_at: Date | null; trash_root: string | null; created_at: Date; updated_at: Date; rev?: bigint | number | string }
 export interface FileRow {
   id: string; owner_id: string; folder_id: string; name: string; name_key: string; current_version_id: string; size: string; sha256: string; origin: string;
   starred_at: Date | null; trashed_at: Date | null; trash_root: string | null; created_at: Date; updated_at: Date;
   scan_status?: string; thumb?: string | null; tag_ids?: string[]; versions?: number; object_id?: string;
+  rev?: bigint | number | string; version_seq?: number; content_at?: Date;
 }
 
-export const folderJson = (f: FolderRow) => ({ id: f.id, type: 'folder' as const, name: f.name, parentId: f.parent_id, starred: !!f.starred_at, createdAt: f.created_at, updatedAt: f.updated_at, trashedAt: f.trashed_at });
+export const folderJson = (f: FolderRow) => ({ id: f.id, type: 'folder' as const, name: f.name, parentId: f.parent_id, starred: !!f.starred_at, createdAt: f.created_at, updatedAt: f.updated_at, trashedAt: f.trashed_at,
+  trashRoot: f.trash_root === f.id, rev: Number(f.rev ?? 0) });
 export const fileJson = (f: FileRow) => ({
   id: f.id, type: 'file' as const, name: f.name, folderId: f.folder_id, size: Number(f.size), sha256: f.sha256, kind: previewKind(f.name), origin: f.origin, starred: !!f.starred_at,
   createdAt: f.created_at, updatedAt: f.updated_at, trashedAt: f.trashed_at, scan: f.scan_status ?? 'pending', thumb: f.thumb === 'ready', tagIds: f.tag_ids ?? [], versions: f.versions ?? 1,
+  trashRoot: f.trash_root === f.id, rev: Number(f.rev ?? 0), versionId: f.current_version_id, versionSeq: f.version_seq ?? 1, contentAt: f.content_at ?? f.updated_at,
 });
 /** Columns every file listing needs; alias the files table as f. */
-export const fileSelect = (t: Db) => t`f.*, f.size::text as size, o.scan_status, o.id as object_id,
+export const fileSelect = (t: Db) => t`f.*, f.size::text as size, o.scan_status, o.id as object_id, v.seq as version_seq, v.created_at as content_at,
   (select status from previews p where p.object_id = o.id and p.kind = 'thumb') as thumb,
   coalesce((select array_agg(ft.tag_id) from file_tags ft where ft.file_id = f.id), '{}') as tag_ids,
   (select count(*)::int from file_versions v2 where v2.file_id = f.id) as versions`;

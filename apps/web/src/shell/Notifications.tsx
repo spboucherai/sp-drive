@@ -19,6 +19,7 @@ export function describe(n: Notification, t: T): Line {
   const d = n.data ?? {};
   switch (n.kind) {
     case 'security.recovery_used': return { icon: 'shield', tone: 'warn', title: t('account.notif.recoveryUsed'), text: str(d.ip) ? t('account.notif.recoveryUsedIp', { ip: str(d.ip) }) : undefined, href: '/settings/activite' };
+    case 'security.device_linked': return { icon: 'laptop', tone: 'accent', title: t('account.notif.deviceLinked'), text: str(d.name) || undefined, href: '/settings/appareils' };
     case 'security.passkey_added': return { icon: 'key', tone: 'accent', title: t('account.notif.passkeyAdded'), text: str(d.label) || undefined, href: '/settings/securite' };
     case 'security.passkey_removed': return { icon: 'key', tone: 'warn', title: t('account.notif.passkeyRemoved'), href: '/settings/securite' };
     case 'scan.infected': {

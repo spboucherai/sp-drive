@@ -4,12 +4,13 @@ import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { authRoutes, loadSession, requireAdmin, requireUser } from './auth.ts';
+import { authRoutes, hasBearer, loadSession, requireAdmin, requireUser } from './auth.ts';
 import { config, UserError } from './config.ts';
 import { sql } from './db.ts';
 import { fileRoutes } from './files.ts';
 import { requestRoutes } from './requests.ts';
 import { shareRoutes } from './shares.ts';
+import { syncRoutes } from './sync.ts';
 import { clamdPing } from './tools.ts';
 import { uploadRoutes } from './uploads.ts';
 
@@ -40,7 +41,8 @@ export async function buildServer(o: { logger?: boolean } = {}): Promise<Fastify
     // CSRF: state-changing calls must come from our own pages (custom header forces a preflight we never grant, origin must match)
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       const origin = req.headers.origin;
-      if (req.headers['x-spd-csrf'] !== '1' || (origin && origin !== config.origin)) throw new UserError('csrf', 'request refused', 403);
+      // a bearer token is not an ambient credential: no other site can make a browser send it, so native clients skip the header
+      if (!(hasBearer(req) && !req.headers.cookie) && (req.headers['x-spd-csrf'] !== '1' || (origin && origin !== config.origin))) throw new UserError('csrf', 'request refused', 403);
     }
     req.session = await loadSession(req, reply);
   });
@@ -58,6 +60,10 @@ export async function buildServer(o: { logger?: boolean } = {}): Promise<Fastify
     if (req.url.startsWith('/api/') || !config.webDir || req.method !== 'GET') return reply.code(404).send({ error: 'not_found', message: 'not found' });
     return reply.header('Cache-Control', 'no-cache').sendFile('index.html'); // single-page app: every other path is a client route
   });
+
+  // Passkeys in the native applications: Apple devices fetch this file to check that an app may use this site's credentials.
+  app.get('/.well-known/apple-app-site-association', async (_req, reply) =>
+    reply.type('application/json').header('Cache-Control', 'public, max-age=3600').send({ webcredentials: { apps: config.appleAppIds } }));
 
   app.get('/api/v1/health/live', async () => ({ ok: true }));
   const readiness = async () => {
@@ -81,7 +87,7 @@ export async function buildServer(o: { logger?: boolean } = {}): Promise<Fastify
     return { ...r, avMode: config.avMode, commit: config.commit, counts: { ...c!, bytes: Number(c!.bytes) } };
   });
 
-  authRoutes(app); fileRoutes(app); uploadRoutes(app); shareRoutes(app); requestRoutes(app);
+  authRoutes(app); fileRoutes(app); uploadRoutes(app); shareRoutes(app); requestRoutes(app); syncRoutes(app);
 
   if (config.webDir) {
     await app.register(fastifyStatic, { root: config.webDir, wildcard: false, maxAge: 0,

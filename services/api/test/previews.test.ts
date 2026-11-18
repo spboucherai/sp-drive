@@ -130,9 +130,15 @@ describe('previews and scanning', () => {
 
 describe('migrations', () => {
   it('revert and re-apply cleanly', async () => {
+    // 002 leaves the first schema intact (the web application alone keeps working on it)
+    expect(await migrateDown()).toBe('002_native_clients');
+    expect(await sql`select 1 from information_schema.columns where table_name = 'files' and column_name = 'rev'`).toHaveLength(0);
+    expect(await sql`select 1 from information_schema.tables where table_name in ('sync_tombstones', 'device_links')`).toHaveLength(0);
+    expect(await sql`select 1 from information_schema.tables where table_name = 'files'`).toHaveLength(1);
     expect(await migrateDown()).toBe('001_init');
     expect(await sql`select 1 from information_schema.tables where table_name = 'files'`).toHaveLength(0);
-    expect(await migrate()).toEqual(['001_init']);
+    expect(await migrate()).toEqual(['001_init', '002_native_clients']);
     expect(await sql`select 1 from information_schema.tables where table_name = 'files'`).toHaveLength(1);
+    expect(await sql`select 1 from information_schema.columns where table_name = 'files' and column_name = 'rev'`).toHaveLength(1);
   });
 });
