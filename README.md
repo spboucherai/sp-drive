@@ -677,6 +677,16 @@ seul nœud, journaux d'accès de la passerelle hors du dépôt, fichiers de plus
 | [docs/runbooks/operations.md](docs/runbooks/operations.md) | exploitation : processus, santé, mise à jour, comptes, sauvegarde, restauration |
 | [CLAUDE.md](CLAUDE.md) | règles et commandes pour les agents de code |
 
+## 📱 Famille SP Drive
+
+Les clients natifs de ce serveur ont chacun leur dépôt sur la forge :
+
+| Dépôt | Plateforme | Rôle |
+|---|---|---|
+| **[sp-drive](https://git.spboucher.ai/sp-drive)** (ce dépôt) | Web + API | Serveur, site, stockage, partage |
+| [sp-drive-macos](https://git.spboucher.ai/sp-drive-macos) | macOS | Client natif, extension Finder (File Provider), hors ligne |
+| [sp-drive-ios](https://git.spboucher.ai/sp-drive-ios) | iOS · iPadOS | Client natif iPhone et iPad (File Provider), hors ligne |
+
 ## 👤 Auteur et licence
 
 <div align="center">
