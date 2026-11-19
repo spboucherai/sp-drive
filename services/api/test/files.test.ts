@@ -239,7 +239,7 @@ describe('explorer', () => {
     await a.client.upload(dir.id, 'un.bin', one); await a.client.upload(sub.id, 'deux é.txt', two);
     const zip = await a.client.get(`/api/v1/zip?folders=${dir.id}`);
     expect(zip.status).toBe(200); expect(zip.headers['content-type']).toBe('application/zip');
-    const path = join('/tmp/sp-drive-test', 'export.zip'); writeFileSync(path, zip.raw);
+    const path = join((process.env.SPD_TEST_ROOT ?? '/tmp/sp-drive-test'), 'export.zip'); writeFileSync(path, zip.raw);
     const listing = execFileSync('/usr/bin/unzip', ['-Z1', path]).toString().trim().split('\n').sort();
     expect(listing).toEqual(['Export/Sous dossier/deux é.txt', 'Export/un.bin']);
     expect(execFileSync('/usr/bin/unzip', ['-p', path, 'Export/un.bin'], { maxBuffer: 1e8 }).equals(one)).toBe(true);

@@ -13,7 +13,7 @@ import { runSandboxed, withWorkDir } from '../src/tools.ts';
 import { closeAll, signup, work } from './harness.ts';
 
 afterAll(closeAll);
-const FX = '/tmp/sp-drive-test/fixtures';
+const FX = `${(process.env.SPD_TEST_ROOT ?? '/tmp/sp-drive-test')}/fixtures`;
 let a: Awaited<ReturnType<typeof signup>>;
 const PNG_1PX = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 beforeAll(async () => {
@@ -120,7 +120,7 @@ describe('previews and scanning', () => {
       expect(blobs.code).not.toBe(0);
       const pg = await runSandboxed(work, '/opt/homebrew/opt/postgresql@17/bin/psql', ['-h', '/tmp', '-l'], { timeoutMs: 8000 });
       expect(pg.code).not.toBe(0); // the database's local socket is out of reach too
-      const outside = await runSandboxed(work, '/usr/bin/touch', ['/tmp/sp-drive-test/data/blobs/escape'], { timeoutMs: 5000 });
+      const outside = await runSandboxed(work, '/usr/bin/touch', [`${(process.env.SPD_TEST_ROOT ?? '/tmp/sp-drive-test')}/data/blobs/escape`], { timeoutMs: 5000 });
       expect(outside.code).not.toBe(0);
       expect((await runSandboxed(work, '/usr/bin/touch', [join(work, 'ok')], { timeoutMs: 5000 })).code).toBe(0);
       await expect(runSandboxed(work, '/bin/sleep', ['30'], { timeoutMs: 1000 })).rejects.toThrow(/exceeded/);

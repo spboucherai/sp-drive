@@ -152,7 +152,7 @@ describe('deposit portals', () => {
   it('keeps deposits in quarantine while the antivirus is unavailable, then places them when it returns', async () => {
     const p = await portal();
     const socket = config.clamdSocket;
-    config.clamdSocket = '/tmp/sp-drive-test/absent.sock';
+    config.clamdSocket = `${(process.env.SPD_TEST_ROOT ?? '/tmp/sp-drive-test')}/absent.sock`;
     let s;
     try {
       s = await start(p.token, [{ name: 'attente.pdf', data: PDF }]);
@@ -271,7 +271,7 @@ describe('deposit portals', () => {
     expect(new Set(names.map((n: string) => n.toLowerCase())).size).toBe(7);
     expect((await a.client.get(`/api/v1/folders/${a.rootId}`)).body.files.filter((f: any) => /cron|boot/.test(f.name))).toEqual([]);
     // nothing was written outside the data directory by a name
-    expect(existsSync('/tmp/sp-drive-test/etc')).toBe(false);
+    expect(existsSync(`${(process.env.SPD_TEST_ROOT ?? '/tmp/sp-drive-test')}/etc`)).toBe(false);
   });
 
   it('protects a portal with a hashed password and stops guessing', async () => {
