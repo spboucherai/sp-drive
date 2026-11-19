@@ -114,17 +114,20 @@ export function collabRoutes(app: FastifyInstance): void {
     const p = z.object({ id: Id, userId: Id }).parse(req.params);
     const b = z.object({ role: Role }).parse(req.body);
     const me = userOf(req);
-    return tx(async (t) => {
+    let stale: UploadRow[] = [];
+    const member = await tx(async (t) => {
       const f = await ownFolder(t, me.id, p.id);
       const [g] = await t<{ id: string }[]>`update folder_grants set role = ${b.role} where folder_id = ${f.id} and owner_id = ${me.id} and grantee_id = ${p.userId} and revoked_at is null returning id`;
       if (!g) throw notFound('member not found');
       // an upload begun under the former role does not outlive it
-      if (b.role === 'viewer') await t`update uploads set status = 'aborted', updated_at = now() where grant_id = ${g.id} and status = 'active'`;
+      if (b.role === 'viewer') stale = await t<UploadRow[]>`update uploads set status = 'aborted', updated_at = now() where grant_id = ${g.id} and status = 'active' returning *, size::text, received::text`;
       await audit(t, actorOf(req), 'collab.member_updated', { targetType: 'folder', targetId: f.id, meta: { grantId: g.id, userId: p.userId, role: b.role } });
       await notify(t, p.userId, 'collab.role_changed', { grantId: g.id, role: b.role, folderName: f.workspace_name ?? f.name, ownerName: me.display_name });
       const [m] = (await membersOf(t, f.id)).filter((x) => x.grantee_id === p.userId);
       return memberJson(m!);
     });
+    for (const u of stale) await rm(uploadPath(u), { force: true });
+    return member;
   });
   app.delete('/api/v1/folders/:id/members/:userId', authed, async (req) => {
     const p = z.object({ id: Id, userId: Id }).parse(req.params);

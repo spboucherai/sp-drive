@@ -238,5 +238,6 @@ describe('storage and upload history', () => {
     expect((await (await signup()).client.get('/api/v1/uploads')).body.uploads).toEqual([]);
     expect((await u.client.get('/api/v1/uploads?state=all')).status).toBe(400);
     expect((await u.client.get(`/api/v1/uploads/${open.id}`)).body.received).toBe(400); // the 1.0 route is untouched
+    await u.client.del(`/api/v1/uploads/${open.id}`);
   });
 });
