@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import { requireUser, userOf } from './auth.ts';
 import { config, UserError } from './config.ts';
 import { sql } from './db.ts';
-import { openSse, type SseStream } from './sse.ts';
+import { closeAllSse, openSse, type SseStream } from './sse.ts';
 import { headRev } from './sync.ts';
 
 interface Client { stream: SseStream; sessionId: string }
@@ -63,6 +63,13 @@ export function eventRoutes(app: FastifyInstance): void {
       s?.delete(client);
       if (s && !s.size) { byOwner.delete(u.id); lastSent.delete(u.id); const t = pending.get(u.id); if (t) { clearTimeout(t); pending.delete(u.id); } }
     });
+  });
+  // Shutdown. `preClose` runs before the HTTP server stops: an open stream is a connection that never becomes idle, so
+  // waiting for it in `onClose` (which runs once the server has closed) would wait for ever — the process stayed alive
+  // on SIGTERM and kept pinging its clients. Streams are ended here, and their connections closed.
+  app.addHook('preClose', async () => {
+    for (const set of byOwner.values()) for (const c of [...set]) c.stream.end();
+    closeAllSse(); // every hijacked stream of the process, the AI answers in flight included
   });
   app.addHook('onClose', async () => {
     for (const set of byOwner.values()) for (const c of [...set]) c.stream.end();

@@ -1,12 +1,15 @@
 // 2.0 fixes reported by the native clients: a thumbnail that becomes ready is announced by the change feed, and the
 // chunk traffic of resumable uploads has its own per-account budget instead of eating the per-address one.
 import { execFileSync } from 'node:child_process';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { config } from '../src/config.ts';
 import { sql } from '../src/db.ts';
-import { UPLOAD_CHUNKS_BAD_CREDENTIAL_PER_MIN } from '../src/server.ts';
+import { buildServer, UPLOAD_CHUNKS_BAD_CREDENTIAL_PER_MIN } from '../src/server.ts';
+import { openSseCount } from '../src/sse.ts';
 import { closeAll, server, signup, work } from './harness.ts';
 
 afterAll(closeAll);
@@ -88,5 +91,32 @@ describe('text status while the extraction is queued without an antivirus', () =
       config.avMode = 'required'; // a scan that failed for good where the antivirus is mandatory: never indexed
       expect(await status()).toBe('unsupported');
     } finally { config.avMode = mode; }
+  });
+});
+
+describe('shutdown with an event stream open', () => {
+  it('ends the stream and closes promptly instead of waiting for a connection that never becomes idle', async () => {
+    const a = await signup();
+    const app = await buildServer({ logger: false }); // its own listening server: the shared one is injected, never listening
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const port = (app.server.address() as AddressInfo).port;
+    const cookie = [...a.client.cookies].map(([k, v]) => `${k}=${v}`).join('; ');
+    let ended = false, body = '';
+    const hello = new Promise<void>((resolve, reject) => {
+      const req = http.get({ host: '127.0.0.1', port, path: '/api/v1/sync/events', headers: { cookie } }, (res) => {
+        expect(res.statusCode).toBe(200);
+        res.on('data', (c) => { body += String(c); if (body.includes('event: hello')) resolve(); });
+        res.on('end', () => { ended = true; }); res.on('close', () => { ended = true; });
+      });
+      req.on('error', (e) => { if (!ended && !body) reject(e); else ended = true; });
+    });
+    await hello;
+    expect(openSseCount()).toBe(1);
+    const t0 = Date.now();
+    await app.close();
+    expect(Date.now() - t0).toBeLessThan(2000);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(ended).toBe(true); // the client saw the end of the stream: it knows the server is gone
+    expect(openSseCount()).toBe(0);
   });
 });
