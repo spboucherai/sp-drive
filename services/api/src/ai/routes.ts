@@ -48,7 +48,7 @@ async function choose(req: FastifyRequest, want: { provider?: string; model?: st
 async function retrieve(ownerId: string, question: string, scope: { fileIds?: string[]; folderIds?: string[] }): Promise<ScoredPassage[]> {
   const lex = await lexicalPassages(ownerId, question, scope, 16);
   if (!lex.length) return scope.fileIds ? leadPassages(ownerId, scope.fileIds, Math.max(1, Math.floor(SOURCES / scope.fileIds.length)), SOURCES) : [];
-  const vector = await embedQuery(question);
+  const vector = await embedQuery(question).catch(() => null); // a busy helper costs the re-ranking, not the answer
   const sem = vector ? await semanticPassages(ownerId, vector, scope, 16) : [];
   const fused = new Map<string, { p: ScoredPassage; score: number }>();
   const add = (list: ScoredPassage[], weight: number) => list.forEach((p, i) => { const k = `${p.objectId}:${p.seq}:${p.fileId}`; const e = fused.get(k) ?? { p, score: 0 }; e.score += weight / (20 + i); fused.set(k, e); });

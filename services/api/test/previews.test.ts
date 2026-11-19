@@ -132,7 +132,18 @@ describe('migrations', () => {
   it('revert and re-apply cleanly', async () => {
     // 003 (2.0) removes exactly what it added: the 1.0 schema with native clients is back, data untouched
     const [before] = await sql<{ files: number; sessions: number }[]>`select (select count(*)::int from files) as files, (select count(*)::int from sessions) as sessions`;
+    // what only 2.0 code understands is cleared by the way down: queued 2.0 jobs, uploads made through a grant
+    const [o1] = await sql<{ id: string }[]>`select id from users order by created_at limit 1`;
+    const [o2] = await sql<{ id: string }[]>`insert into users (email, display_name, role, webauthn_handle) values ('down@example.test', 'Down', 'user', decode(md5(random()::text) || md5(random()::text), 'hex')) returning id`;
+    const [d1] = await sql<{ id: string }[]>`insert into folders (owner_id, parent_id, name, name_key) select ${o1!.id}, id, 'down-test', 'down-test' from folders where owner_id = ${o1!.id} and parent_id is null returning id`;
+    const [g1] = await sql<{ id: string }[]>`insert into folder_grants (folder_id, owner_id, grantee_id, role) values (${d1!.id}, ${o1!.id}, ${o2!.id}, 'uploader') returning id`;
+    const [u1] = await sql<{ id: string }[]>`insert into uploads (owner_id, actor_user_id, grant_id, folder_id, name, size, expires_at) values (${o1!.id}, ${o2!.id}, ${g1!.id}, ${d1!.id}, 'x', 5, now() + interval '1 day') returning id`;
+    await sql`insert into jobs (kind, payload) values ('extract_text', '{}'), ('phash', '{}'), ('preview', '{"objectId":"00000000-0000-4000-8000-000000000000"}')`;
     expect(await migrateDown()).toBe('003_next');
+    expect(await sql`select 1 from jobs where kind in ('extract_text', 'phash')`).toHaveLength(0);
+    expect(await sql`select 1 from jobs where kind = 'preview' and status = 'queued'`).toHaveLength(1); // 1.0 jobs are left alone
+    expect((await sql`select status from uploads where id = ${u1!.id}`)[0]!.status).toBe('aborted');
+    await sql`delete from jobs where kind = 'preview' and status = 'queued'`;
     expect(await sql`select 1 from information_schema.tables where table_name in ('object_text', 'object_passages', 'object_phash', 'folder_grants', 'collections', 'system_state')`).toHaveLength(0);
     expect(await sql`select 1 from information_schema.columns where (table_name, column_name) in (('sessions', 'client_platform'), ('users', 'ai_external'), ('folders', 'workspace_name'), ('uploads', 'grant_id'))`).toHaveLength(0);
     expect(await sql`select 1 from pg_ts_config where cfgname in ('spd_fr', 'spd_en', 'spd_plain')`).toHaveLength(0);

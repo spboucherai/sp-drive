@@ -55,6 +55,18 @@ export const config = {
   extractMaxPages: num('SPD_EXTRACT_MAX_PAGES', 500),
   ocrMaxPages: num('SPD_OCR_MAX_PAGES', 60),
   extractMaxChars: num('SPD_EXTRACT_MAX_CHARS', 2_000_000),
+  /** an image larger than this many pixels is never decoded (OCR, perceptual hash): a few kilobytes can declare a gigapixel picture */
+  imageMaxPixels: num('SPD_IMAGE_MAX_MEGAPIXELS', 120) * 1_000_000,
+  /** memory the API process may spend on cached passage vectors (semantic search), all accounts together */
+  semanticCacheBytes: num('SPD_SEMANTIC_CACHE_MB', 192) * MIB,
+  /** event streams (SSE) the process accepts in all */
+  eventsMaxStreams: num('SPD_EVENTS_MAX_STREAMS', 1000),
+  /** bytes a member may hold in unfinished uploads on one shared folder (they are reserved on the owner's quota) */
+  grantPendingMaxBytes: num('SPD_GRANT_PENDING_GB', 20) * GIB,
+  /** doc / rtf read by textutil: smaller cap than PDF, the tool loads the whole document */
+  textutilMaxBytes: num('SPD_TEXTUTIL_MAX_MB', 50) * MIB,
+  /** wall-clock limit of the Node-side extraction child (text, HTML, office XML) */
+  nodeExtractTimeoutMs: num('SPD_NODE_EXTRACT_TIMEOUT_S', 60) * 1000,
   extractTimeoutMs: num('SPD_EXTRACT_TIMEOUT_S', 240) * 1000,
   /** document intelligence: external providers stay off unless SPD_AI_EXTERNAL=on (and the account agrees) */
   aiExternal: process.env.SPD_AI_EXTERNAL === 'on',

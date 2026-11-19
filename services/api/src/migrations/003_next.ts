@@ -101,6 +101,9 @@ create index audit_events_owner_target on audit_events (owner_id, target_type, t
 `;
 
 export const down = `
+-- what only 2.0 code understands must not be left for 1.0 code to trip on
+update uploads set status = 'aborted', updated_at = now() where grant_id is not null and status in ('active', 'completing');
+delete from jobs where kind in ('extract_text', 'phash');
 drop index if exists audit_events_owner_target;
 drop table if exists system_state;
 drop table if exists collections;

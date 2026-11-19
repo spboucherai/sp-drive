@@ -35,6 +35,15 @@ async function grantOf(t: Db, req: FastifyRequest, grantId: string, need: keyof 
   if (!(CAN[need] as readonly string[]).includes(g.role)) throw forbidden();
   return g;
 }
+/**
+ * The grant for a WRITE: read, take the owner's tree lock, read again. Revoking and changing a role take the same
+ * lock, so a write either finishes before them or sees their result — never a grant that died half-way through.
+ */
+async function lockedGrant(t: Db, req: FastifyRequest, grantId: string, need: keyof typeof CAN): Promise<Grant> {
+  const seen = await grantOf(t, req, grantId, need);
+  await lockOwner(t, seen.owner_id);
+  return grantOf(t, req, grantId, need);
+}
 /** A live folder inside the grant (the granted folder itself when no id is given), or 404. */
 async function folderIn(t: Db, g: Grant, folderId?: string): Promise<FolderRow> {
   const f = await getFolder(t, g.owner_id, folderId ?? g.folder_id).catch(() => { throw notFound(); });
@@ -92,14 +101,15 @@ export function collabRoutes(app: FastifyInstance): void {
     const f = await ownFolder(sql, userOf(req).id, id);
     return { folder: folderJson(f), members: (await membersOf(sql, f.id)).map(memberJson) };
   });
-  app.post('/api/v1/folders/:id/members', authed, async (req) => {
+  app.post('/api/v1/folders/:id/members', { ...authed, config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req) => {
     const { id } = z.object({ id: Id }).parse(req.params);
-    const b = z.object({ userId: Id.optional(), email: z.email().max(200).optional(), role: Role, workspaceName: z.string().trim().min(1).max(80).optional() }).refine((x) => !!x.userId !== !!x.email, 'give userId or email').parse(req.body);
+    // by address only: an account identifier alone must never be exchangeable for a name and an address
+    const b = z.object({ email: z.email().max(200), role: Role, workspaceName: z.string().trim().min(1).max(80).optional() }).strict().parse(req.body);
     const me = userOf(req);
     return tx(async (t) => {
       await lockOwner(t, me.id);
       const f = await ownFolder(t, me.id, id);
-      const [target] = await t<{ id: string; display_name: string; email: string }[]>`select id, display_name, email from users where disabled_at is null and id <> ${me.id} and ${b.userId ? t`id = ${b.userId}` : t`email = ${b.email!}`}`;
+      const [target] = await t<{ id: string; display_name: string; email: string }[]>`select id, display_name, email from users where disabled_at is null and id <> ${me.id} and email = ${b.email}`;
       if (!target) throw notFound('no such account');
       const [g] = await t<{ id: string; created_at: Date }[]>`insert into folder_grants (folder_id, owner_id, grantee_id, role) values (${f.id}, ${me.id}, ${target.id}, ${b.role})
         on conflict (folder_id, grantee_id) where revoked_at is null do nothing returning id, created_at`;
@@ -116,11 +126,12 @@ export function collabRoutes(app: FastifyInstance): void {
     const me = userOf(req);
     let stale: UploadRow[] = [];
     const member = await tx(async (t) => {
+      await lockOwner(t, me.id);
       const f = await ownFolder(t, me.id, p.id);
       const [g] = await t<{ id: string }[]>`update folder_grants set role = ${b.role} where folder_id = ${f.id} and owner_id = ${me.id} and grantee_id = ${p.userId} and revoked_at is null returning id`;
       if (!g) throw notFound('member not found');
       // an upload begun under the former role does not outlive it
-      if (b.role === 'viewer') stale = await t<UploadRow[]>`update uploads set status = 'aborted', updated_at = now() where grant_id = ${g.id} and status = 'active' returning *, size::text, received::text`;
+      if (b.role === 'viewer') stale = await t<UploadRow[]>`update uploads set status = 'aborted', updated_at = now() where grant_id = ${g.id} and status in ('active', 'completing') returning *, size::text, received::text`;
       await audit(t, actorOf(req), 'collab.member_updated', { targetType: 'folder', targetId: f.id, meta: { grantId: g.id, userId: p.userId, role: b.role } });
       await notify(t, p.userId, 'collab.role_changed', { grantId: g.id, role: b.role, folderName: f.workspace_name ?? f.name, ownerName: me.display_name });
       const [m] = (await membersOf(t, f.id)).filter((x) => x.grantee_id === p.userId);
@@ -133,6 +144,7 @@ export function collabRoutes(app: FastifyInstance): void {
     const p = z.object({ id: Id, userId: Id }).parse(req.params);
     const me = userOf(req);
     const stale = await tx(async (t) => {
+      await lockOwner(t, me.id);
       // the folder may sit in the trash: access must still be removable
       const [f] = await t<FolderRow[]>`select * from folders where id = ${p.id} and owner_id = ${me.id}`;
       if (!f) throw notFound('folder not found');
@@ -228,7 +240,7 @@ export function collabRoutes(app: FastifyInstance): void {
     const q = z.object({ before: z.coerce.number().int().min(1).optional(), limit: z.coerce.number().int().min(1).max(200).default(50) }).parse(req.query);
     const g = await grantOf(sql, req, grantId, 'read');
     await folderIn(sql, g);
-    return subtreeActivity(g.owner_id, g.folder_id, userOf(req).id, q);
+    return memberActivity(g, userOf(req).id, q);
   });
 
   // --- editor ---
@@ -236,8 +248,7 @@ export function collabRoutes(app: FastifyInstance): void {
     const { grantId } = G.parse(req.params);
     const b = z.object({ parentId: Id.optional(), name: z.string().min(1).max(1000), onConflict: z.enum(['fail', 'rename']).default('fail') }).parse(req.body);
     return tx(async (t) => {
-      const g = await grantOf(t, req, grantId, 'write');
-      await lockOwner(t, g.owner_id);
+      const g = await lockedGrant(t, req, grantId, 'write');
       const parent = await folderIn(t, g, b.parentId);
       const f = await createFolder(t, g.owner_id, parent.id, b.name, b.onConflict);
       await auditIn(t, req, g, 'folder.created', { targetType: 'folder', targetId: f.id });
@@ -249,8 +260,7 @@ export function collabRoutes(app: FastifyInstance): void {
     const p = G.extend({ id: Id }).parse(req.params);
     const b = z.object({ name: z.string().min(1).max(1000).optional(), parentId: Id.optional(), onConflict: z.enum(['fail', 'rename']).default('fail') }).refine((x) => x.name !== undefined || x.parentId !== undefined, 'nothing to change').parse(req.body);
     return tx(async (t) => {
-      const g = await grantOf(t, req, p.grantId, 'write');
-      await lockOwner(t, g.owner_id);
+      const g = await lockedGrant(t, req, p.grantId, 'write');
       const [isFolder] = await t`select 1 from folders where id = ${p.id} and owner_id = ${g.owner_id}`;
       if (isFolder) {
         const d = await folderIn(t, g, p.id);
@@ -270,8 +280,7 @@ export function collabRoutes(app: FastifyInstance): void {
     const { grantId } = G.parse(req.params);
     const b = z.object({ fileIds: z.array(Id).max(500).default([]), folderIds: z.array(Id).max(500).default([]) }).refine((s) => s.fileIds.length + s.folderIds.length > 0, 'empty selection').parse(req.body);
     await tx(async (t) => {
-      const g = await grantOf(t, req, grantId, 'write');
-      await lockOwner(t, g.owner_id);
+      const g = await lockedGrant(t, req, grantId, 'write');
       for (const id of b.folderIds) { const d = await folderIn(t, g, id); if (d.id === g.folder_id) throw forbidden(); }
       for (const id of b.fileIds) await fileIn(t, g, id);
       await trashItems(t, g.owner_id, b);
@@ -293,16 +302,19 @@ export function collabRoutes(app: FastifyInstance): void {
     const b = z.object({ folderId: Id.optional(), name: z.string().min(1).max(1000), size: z.number().int().min(0), relativePath: z.string().max(4000).optional(), onConflict: z.enum(['fail', 'rename', 'version']).default('rename') }).parse(req.body);
     if (b.size > config.maxFileBytes) throw new UserError('file_too_large', 'file exceeds the maximum size', 413, { max: config.maxFileBytes });
     const row = await tx(async (t) => {
-      const g = await grantOf(t, req, grantId, 'upload');
-      // an uploader adds files; it never replaces one it cannot see
-      if (g.role === 'uploader' && b.onConflict !== 'rename') throw forbidden();
-      await lockOwner(t, g.owner_id);
+      const g = await lockedGrant(t, req, grantId, 'upload');
+      // an uploader adds files; it never replaces one it cannot see, and it aims at the granted folder only: answering
+      // differently for a sub-folder that exists and one that does not would be a way to list
+      if (g.role === 'uploader' && (b.onConflict !== 'rename' || (b.folderId !== undefined && b.folderId !== g.folder_id))) throw forbidden();
+      // unsent bytes are reserved on the OWNER's quota: one member may hold only so much of it, and not for long
+      const [held] = await t<{ n: string }[]>`select coalesce(sum(size), 0)::text as n from uploads where grant_id = ${g.id} and status in ('active', 'completing')`;
+      if (Number(held!.n) + b.size > config.grantPendingMaxBytes) throw new UserError('too_many_pending_uploads', 'too many unfinished uploads on this shared folder: finish or cancel some first', 413, { pending: Number(held!.n), max: config.grantPendingMaxBytes });
       await assertQuota(t, g.owner_id, b.size); // the owner's quota
       let folderId = (await folderIn(t, g, b.folderId)).id;
       const segs = b.relativePath ? safePathSegments(b.relativePath).slice(0, -1) : [];
       if (segs.length) folderId = await ensurePath(t, g.owner_id, folderId, segs);
       const [r] = await t<UploadRow[]>`insert into uploads (owner_id, actor_user_id, grant_id, folder_id, name, size, on_conflict, expires_at)
-        values (${g.owner_id}, ${g.grantee_id}, ${g.id}, ${folderId}, ${sanitizeName(b.name)}, ${b.size}, ${b.onConflict}, now() + interval '7 days') returning *, size::text, received::text`;
+        values (${g.owner_id}, ${g.grantee_id}, ${g.id}, ${folderId}, ${sanitizeName(b.name)}, ${b.size}, ${b.onConflict}, now() + interval '24 hours') returning *, size::text, received::text`;
       return r!;
     });
     return uploadJson(row);
@@ -331,7 +343,8 @@ export function collabRoutes(app: FastifyInstance): void {
     const p = G.extend({ id: Id }).parse(req.params);
     const b = z.object({ sha256: z.string().regex(/^[0-9a-fA-F]{64}$/).optional() }).parse(req.body ?? {});
     const first = await uploadIn(sql, req, p.grantId, p.id);
-    const done = (u: UploadRow, f: FileRow, g: Grant) => ({ ...uploadJson(u), file: g.role === 'uploader' ? { id: f.id, name: f.name, size: Number(f.size) } : sharedFileJson(f) });
+    // an uploader learns nothing about the folder: not even the name its file finally got ("x (2).txt" would say that "x.txt" exists)
+    const done = (u: UploadRow, f: FileRow, g: Grant) => ({ ...uploadJson(u), file: g.role === 'uploader' ? { id: f.id, name: u.name, size: Number(f.size) } : sharedFileJson(f) });
     const [claimed] = await sql<UploadRow[]>`update uploads set status = 'completing', updated_at = now() where id = ${p.id} and grant_id = ${first.g.id} and actor_user_id = ${first.g.grantee_id} and status = 'active' returning *, size::text, received::text`;
     if (!claimed) {
       if (first.u.status === 'done' && first.u.file_id) { const f = await getFile(sql, first.g.owner_id, first.u.file_id, { trashed: true }).catch(() => null); if (f) return done(first.u, f, first.g); }
@@ -340,13 +353,14 @@ export function collabRoutes(app: FastifyInstance): void {
     try {
       const sha = await sealCheck(claimed, b.sha256);
       const result = await tx(async (t) => {
-        const g = await grantOf(t, req, p.grantId, 'upload'); // revoked while the bytes travelled: nothing is placed
-        await lockOwner(t, g.owner_id);
+        const g = await lockedGrant(t, req, p.grantId, 'upload'); // revoked while the bytes travelled: nothing is placed
         await assertQuota(t, g.owner_id, Number(claimed.size), claimed.id);
         const folder = await folderIn(t, g, claimed.folder_id ?? undefined).catch(() => folderIn(t, g)); // target trashed meanwhile → the granted folder
         const [object] = await ensureObject(t, g.owner_id, uploadPath(claimed), Number(claimed.size), sha);
         const { file, created } = await addFile(t, { ownerId: g.owner_id, folderId: folder.id, name: claimed.name, object, onConflict: g.role === 'uploader' ? 'rename' : claimed.on_conflict, actorId: g.grantee_id });
-        const [row] = await t<UploadRow[]>`update uploads set status = 'done', file_id = ${file.id}, updated_at = now() where id = ${claimed.id} returning *, size::text, received::text`;
+        // only an upload still being completed becomes done: one aborted meanwhile (revocation, lower role) places nothing
+        const [row] = await t<UploadRow[]>`update uploads set status = 'done', file_id = ${file.id}, updated_at = now() where id = ${claimed.id} and status = 'completing' and grant_id = ${g.id} returning *, size::text, received::text`;
+        if (!row) throw new UserError('upload_closed', 'this upload is no longer active', 409);
         await auditIn(t, req, g, created ? 'file.uploaded' : 'file.version_added', { targetType: 'file', targetId: file.id, meta: { size: Number(claimed.size) } });
         // one unread notice per grant is enough for the owner: a folder of a thousand files is one event
         const [pendingNotice] = await t`select 1 from notifications where user_id = ${g.owner_id} and kind = 'collab.upload' and read_at is null and data->>'grantId' = ${g.id} and created_at > now() - interval '30 minutes'`;
@@ -371,7 +385,39 @@ async function subtreeActivity(ownerId: string, folderId: string, viewer: string
     union all select c.id, sub.depth + 1 from folders c join sub on c.parent_id = sub.id where sub.depth < 100) select id from sub limit 5000`).map((r) => r.id);
   const files = (await sql<{ id: string }[]>`select id from files where owner_id = ${ownerId} and folder_id = any(${folders}) limit 20000`).map((r) => r.id);
   const rows = await sql<ActivityRow[]>`select ${activitySelect(sql)} from audit_events e where e.owner_id = ${ownerId} ${q.before ? sql`and e.id < ${q.before}` : sql``}
-    and ((e.target_type = 'folder' and e.target_id = any(${folders})) or (e.target_type = 'file' and e.target_id = any(${files})) or e.meta->'fileIds' ?| ${files} or e.meta->'folderIds' ?| ${folders} or e.meta->>'destinationId' = any(${folders}))
+    and ((e.target_type = 'folder' and e.target_id = any(${folders})) or (e.target_type = 'file' and e.target_id = any(${files})) or e.meta->'fileIds' ?| ${files} or e.meta->'folderIds' ?| ${folders} or e.meta->>'destinationId' = any(${folders})
+      or e.meta->>'fileId' = any(${files}) or e.meta->>'folderId' = any(${folders}))
     order by e.id desc limit ${q.limit + 1}`;
   return { events: rows.slice(0, q.limit).map((e) => activityJson(e, viewer)), more: rows.length > q.limit };
+}
+
+/** What a member may read of the trail, and which keys of `meta` go with each action. Nothing else leaves. */
+const MEMBER_ACTIONS: Record<string, string[]> = {
+  'file.uploaded': ['size'], 'file.version_added': ['size'], 'file.version_restored': [], 'file.renamed': [], 'folder.created': [], 'folder.renamed': [], 'items.moved': ['files', 'folders'],
+};
+/**
+ * The workspace feed as a MEMBER sees it — deliberately much less than the owner's trail:
+ * only events since the member was given access, only a short list of actions (no downloads, no sharing or member
+ * management, nothing about the trash, no former names), only about items that are live inside the granted folder today, people by
+ * display name only (no account identifier), and of `meta` only the keys listed above.
+ */
+async function memberActivity(g: Grant, viewer: string, q: { before?: number; limit: number }) {
+  const folders = (await sql<{ id: string }[]>`with recursive sub as (select id, 0 as depth from folders where id = ${g.folder_id} and owner_id = ${g.owner_id} and trashed_at is null
+    union all select c.id, sub.depth + 1 from folders c join sub on c.parent_id = sub.id where c.trashed_at is null and sub.depth < 100) select id from sub limit 5000`).map((r) => r.id);
+  const files = await sql<{ id: string; name: string }[]>`select id, name from files where owner_id = ${g.owner_id} and trashed_at is null and folder_id = any(${folders}) limit 20000`;
+  const fileName = new Map(files.map((f) => [f.id, f.name])), fileIds = [...fileName.keys()];
+  const folderName = new Map((await sql<{ id: string; name: string }[]>`select id, name from folders where id = any(${folders})`).map((f) => [f.id, f.name]));
+  const rows = await sql<{ id: string; at: Date; action: string; actor_kind: string; actor_user_id: string | null; actor_name: string | null; target_type: string; target_id: string; meta: Record<string, unknown> }[]>`
+    select e.id::text, e.at, e.action, e.actor_kind, e.actor_user_id, (select display_name from users x where x.id = e.actor_user_id) as actor_name, e.target_type, e.target_id, e.meta
+    from audit_events e where e.owner_id = ${g.owner_id} and e.at >= ${g.created_at} and e.action = any(${Object.keys(MEMBER_ACTIONS)}) ${q.before ? sql`and e.id < ${q.before}` : sql``}
+      and ((e.target_type = 'folder' and e.target_id = any(${folders})) or (e.target_type = 'file' and e.target_id = any(${fileIds}))
+        or (e.action = 'items.moved' and e.meta->>'destinationId' = any(${folders}) and (e.meta->'fileIds' ?| ${fileIds} or e.meta->'folderIds' ?| ${folders})))
+    order by e.id desc limit ${q.limit + 1}`;
+  return { events: rows.slice(0, q.limit).map((e) => {
+    const name = e.target_type === 'file' ? fileName.get(e.target_id) : e.target_type === 'folder' ? folderName.get(e.target_id) : undefined;
+    return { id: e.id, at: e.at, action: e.action,
+      actor: { kind: e.actor_kind === 'user' ? 'user' : 'system', userId: null, displayName: e.actor_kind === 'user' ? e.actor_name : null, me: e.actor_user_id === viewer },
+      target: e.target_type === 'file' || e.target_type === 'folder' ? { type: e.target_type, id: e.target_id, name: name ?? null } : null,
+      meta: Object.fromEntries(MEMBER_ACTIONS[e.action]!.filter((k) => typeof e.meta[k] === 'string' || typeof e.meta[k] === 'number').map((k) => [k, e.meta[k]])) };
+  }), more: rows.length > q.limit };
 }

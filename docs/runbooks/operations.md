@@ -117,3 +117,20 @@ Correctif sans action à l'écran ni affaiblissement du bac à sable : ajouter a
 `SPD_SOFFICE=/Users/Shared/sp-drive-tools/LibreOffice.app/Contents/MacOS/soffice` (la copie existe déjà, hors du
 dossier personnel, donc lisible dans le bac à sable). Autres voies : approuver LibreOffice une fois à l'écran, ou
 redémarrer le Mac (l'évaluation en attente disparaît) après `xattr -rs -d com.apple.quarantine /Applications/LibreOffice.app`.
+
+### Revenir au code 1.0 après un déploiement 2.0
+
+Le schéma 003 est additif : le code 1.0 fonctionne dessus. Deux façons de revenir.
+
+1. **Code seul (recommandé, rien n'est perdu)** : redéployer le code 1.0, puis exécuter une fois, avant de relancer le
+   worker 1.0 (il ne connaît pas ces types de jobs et les ferait échouer, et les routes 1.0 ne distinguent pas les
+   téléversements faits à travers un accord) :
+
+   ```sql
+   update uploads set status = 'aborted', updated_at = now() where grant_id is not null and status in ('active', 'completing');
+   delete from jobs where kind in ('extract_text', 'phash');
+   ```
+   Les tables 2.0 (index, accords, collections) restent en place et inertes ; les déclencheurs `pg_notify` sans écouteur
+   ne coûtent rien.
+2. **Schéma aussi** : `node dist/cli.mjs migrate-down --yes-drop-data` avec le code **2.0** (supprime l'index, les
+   accords, les collections ; fait lui-même les deux opérations ci-dessus), puis redéployer le code 1.0.

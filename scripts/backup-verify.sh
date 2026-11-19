@@ -27,12 +27,18 @@ else
   want=$(sed -n 's/.*"dumpSha256":"\([0-9a-f]\{64\}\)".*/\1/p' "$OUT/status.json" 2>/dev/null)
   wantName=$(sed -n 's/.*"dump":"\([^"]*\)".*/\1/p' "$OUT/status.json" 2>/dev/null)
   got=$(shasum -a 256 "$DUMP" | cut -d' ' -f1)
-  if [[ -n "$want" && "$wantName" == "${DUMP:t}" && "$want" != "$got" ]]; then errors+=("the dump ${DUMP:t} does not hash to what the backup recorded")
+  hashOk=false
+  if [[ -n "$want" && "$wantName" == "${DUMP:t}" ]]; then
+    if [[ "$want" == "$got" ]]; then hashOk=true; else errors+=("the dump ${DUMP:t} does not hash to what the backup recorded"); fi
+  fi
+  if (( ${#errors} )); then :
   elif (( USE_KEY )); then
     if [[ ! -r "$KEY" ]]; then errors+=("master key not readable (use --no-key on an off-node copy)")
     elif n=$(openssl enc -d -aes-256-ctr -pbkdf2 -iter 200000 -pass "file:$KEY" -in "$DUMP" 2>/dev/null | pg_restore --list 2>/dev/null | grep -c 'TABLE DATA'); (( n > 10 )); then dumpOk=true
     else errors+=("the dump ${DUMP:t} does not decrypt into a readable PostgreSQL archive"); fi
-  else dumpOk=true; fi
+  # without the key the recorded hash is the only proof: no hash for THIS dump means the dump was not checked
+  elif $hashOk; then dumpOk=true
+  else errors+=("the dump ${DUMP:t} could not be checked: status.json records no hash for it (copy incomplete, or made by a backup older than 2.0)"); fi
 fi
 if [[ ! -s "$MAN" ]]; then [[ -d "$OUT/blobs" && -n "$(find "$OUT/blobs" -type f -print -quit)" ]] && errors+=("no manifest.tsv (written by scripts/backup.sh since 2.0)")
 else
@@ -54,7 +60,7 @@ else
 fi
 ok=true; (( ${#errors} )) && ok=false
 errJson=$(for e in $errors; do print -rn -- "\"$(json_str "$e")\","; done)
-OUTJSON="{\"ok\":$ok,\"at\":\"$NOW\",\"host\":\"$(json_str "$LABEL")\",\"dump\":\"${DUMP:t}\",\"dumpChecked\":$dumpOk,\"dumpDecrypted\":$([[ $USE_KEY == 1 && $dumpOk == true ]] && echo true || echo false),\"sampled\":$sampled,\"liveCompared\":$liveChecked,\"mismatched\":$mismatched,\"missing\":$missing,\"objects\":$( [[ -f "$MAN" ]] && wc -l < "$MAN" | tr -d ' ' || echo 0),\"errors\":[${errJson%,}]}"
+OUTJSON="{\"ok\":$ok,\"at\":\"$NOW\",\"host\":\"$(json_str "$LABEL")\",\"dump\":\"${DUMP:t}\",\"dumpChecked\":$dumpOk,\"dumpHashMatched\":${hashOk:-false},\"dumpDecrypted\":$([[ $USE_KEY == 1 && $dumpOk == true ]] && echo true || echo false),\"sampled\":$sampled,\"liveCompared\":$liveChecked,\"mismatched\":$mismatched,\"missing\":$missing,\"objects\":$( [[ -f "$MAN" ]] && wc -l < "$MAN" | tr -d ' ' || echo 0),\"errors\":[${errJson%,}]}"
 umask 077; print -r -- "$OUTJSON" > "$OUT/$WRITE.tmp" && mv "$OUT/$WRITE.tmp" "$OUT/$WRITE"
 print -r -- "$OUTJSON"
 $ok && echo "BACKUP VERIFY OK" || { echo "BACKUP VERIFY FAILED"; exit 1; }

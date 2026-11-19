@@ -91,3 +91,24 @@ de la passerelle TLS ; le poste du propriétaire.
 - **Événements SSE** : aucun contenu dans les événements (un numéro de révision, un type de notification) ; 16 flux
   au plus par compte ; un flux est fermé quand sa session est révoquée.
 - **Piste d'audit** : les renommages y consignent l'ancien nom, les opérations groupées les identifiants (200 au plus).
+
+### 2.0 — durcissements après la revue de sécurité (2026-11-19)
+
+- **Extraction de texte hors du worker** : la lecture des fichiers texte, HTML et XML bureautique se fait dans un
+  processus enfant (`extract-child`, bac à sable, tas borné, arrêt forcé après `SPD_NODE_EXTRACT_TIMEOUT_S`, 60 s) ;
+  l'analyse des balises est une passe linéaire (`textextract.ts`), plafonnée en caractères lus (12 M par partie,
+  24 Mo décompressés par document) et produits. Un fichier hostile coûte au plus ce délai à un enfant, jamais la boucle
+  d'événements du worker. `textutil` : entrée ≤ 50 Mo, sortie relue avec plafond. Images : dimensions lues dans
+  l'en-tête, refus au-delà de `SPD_IMAGE_MAX_MEGAPIXELS` (120) avant tout décodage.
+- **Fil d'activité des membres** : liste blanche d'actions et de clés, événements postérieurs à l'accord, éléments
+  vivants seulement, aucun identifiant de compte. L'ajout d'un membre se fait par adresse uniquement.
+- **Rôle « uploader »** : ne reçoit ni le nom final d'un fichier renommé pour conflit, ni une réponse différente selon
+  qu'un sous-dossier existe ; ne vise que le dossier accordé.
+- **Courses révocation / écriture** : révocation et changement de rôle prennent le verrou d'arbre du propriétaire ;
+  toute écriture d'un membre relit l'accord sous ce verrou ; un téléversement n'est marqué terminé que s'il est encore
+  « en cours de finalisation ».
+- **Réservation de quota par un membre** : plafond d'octets en attente par accord, expiration à 24 h.
+- **Limites** : places de flux SSE réservées avant toute attente (16 par compte, plafond global) ; une requête de
+  fragment refusée pour CSRF est comptée ; l'assistant local démarre au plus deux fois en parallèle, file bornée,
+  sonde et vecteurs de requête mis en commun ; cache de vecteurs borné en octets ; regroupement d'images similaires
+  sans mémoire par paire, réponses plafonnées.

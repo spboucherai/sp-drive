@@ -135,7 +135,7 @@ describe('deposit portals', () => {
     expect((await tree(a.client, p.folderId)).map((n) => n.split('/')[1])).toEqual(['bon.pdf', 'liste.csv']);
     // the infected bytes exist nowhere any more: not in quarantine, not as a stored object
     for (const it of d.items) expect(existsSync(`${config.quarantineDir}/up-${it.uploadId}`)).toBe(false);
-    expect(await sql`select 1 from storage_objects where sha256 = ${sha(EICAR)}`).toHaveLength(0);
+    expect(await sql`select 1 from storage_objects where sha256 = ${sha(EICAR)} and owner_id = ${a.userId}`).toHaveLength(0); // this account's: other suites keep their own infected fixtures
     const subId = (await a.client.get(`/api/v1/requests/${p.id}/submissions`)).body[0].id;
     const detail = (await a.client.get(`/api/v1/submissions/${subId}`)).body;
     const rejected = detail.events.filter((e: any) => e.action === 'submission.item_rejected');

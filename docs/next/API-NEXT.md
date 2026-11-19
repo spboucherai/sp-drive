@@ -27,6 +27,12 @@ Everything is additive. A 1.0 client keeps working unchanged against a 2.0 serve
 | D15 | `GET /files/:id/text` | where the antivirus is optional and absent (`SPD_AV_MODE=optional`, development stacks), a file whose scan was skipped answers `pending` until its extraction ran — it used to answer `unsupported` for a moment, and a client that stops polling on `unsupported` never saw the text arrive | found by the web inspector |
 | D16 | activity events | `target` gains **`name`** (see §7.2) | an activity screen could not name what an event was about without one request per line |
 | D17 | `GET /sync/events` | "the stream never ends by itself" — except when the server shuts down: on SIGTERM / SIGINT every open stream is ended and its connection closed at once (same for an AI answer in flight). A client sees the end of the stream and reconnects with its usual back-off | the process used to stay alive, pinging, until the supervisor's kill timeout |
+| D18 | `POST /folders/:id/members { userId \| email }` | **`email` only** (`{ email, role, workspaceName? }`, unknown keys refused with 400; 20 calls/min) | an account identifier alone must not be exchangeable for a display name and an address; the address is what `/collab/resolve` was given anyway |
+| D19 | `GET /shared/:grantId/activity` returned the owner's trail for the folder | a **reduced feed** for members, see §6.2 "Member activity": seven actions, events since the grant only, live items only, people by display name only (`actor.userId` is always `null`), a short whitelist of `meta` keys | the owner's audit history (downloads, former names, other members, trashed items) is not the member's to read |
+| D20 | uploader: `complete` returned `file { id, name, size }` with the final name | `file.name` is **the name the uploader sent**, even when the server stored it as "x (2).txt"; an uploader may only aim at the granted folder itself (`folderId` omitted or equal to it, else 403); `relativePath` still creates sub-folders silently | a renamed final name, or a different answer for an existing sub-folder, would let an uploader list the folder |
+| D21 | grant uploads | an upload opened through a grant **expires after 24 h** (7 days for one's own); the unfinished uploads of one member on one grant may hold at most `SPD_GRANT_PENDING_GB` (default 20 GiB): beyond it `413 too_many_pending_uploads { pending, max }`. A single file sent through a grant can therefore not exceed that size | unsent bytes are reserved on the owner's quota |
+| D22 | `GET /sync/events` | besides `429 too_many_streams` (16 per account) the server may answer **`503 too_many_streams`** when the whole process is at its ceiling (`SPD_EVENTS_MAX_STREAMS`, default 1000): keep polling and retry with backoff | |
+| D23 | `GET /search/semantic` | may answer **`503 busy { retryAfterS }`** when the local model already has a queue of requests | the helper runs at most two at a time |
 
 ## 1. Conventions (unchanged from 1.0)
 
@@ -291,7 +297,7 @@ or `404`. Exact address only, never the caller's own, 10 calls/min.
   "members": [{ "grantId": "d315eccf-…", "userId": "b52c6d94-…", "displayName": "Bob Gagnon", "email": "bob@example.test",
                 "role": "uploader", "createdAt": "2026-11-19T18:44:54.963Z" }] }
 ```
-**`POST /api/v1/folders/:id/members`** `{ "userId": "…" | "email": "…", "role": "viewer"|"editor"|"uploader", "workspaceName"?: "…" }`
+**`POST /api/v1/folders/:id/members`** `{ "email": "bob@example.test", "role": "viewer"|"editor"|"uploader", "workspaceName"?: "…" }` (by address only, D18)
 → one member object (as above). Errors: `400 root_immutable` (the root cannot be shared), `404` (no such account, or
 oneself), `409 already_member`.
 **`PATCH /api/v1/folders/:id/members/:userId`** `{ "role": "…" }` → the member object. Dropping to `viewer` aborts
@@ -321,7 +327,7 @@ Every route below starts by re-checking the grant; see D1 for 403 vs 404.
 | `GET /shared/:grantId/files/:fileId` | viewer, editor | `{ grantId, role, file, path }` |
 | `GET /shared/:grantId/files/:fileId/content` | viewer, editor | the bytes; `Range`, `?download=1`, `?as=text` as on the owner route. `451 infected` always (no acknowledgement for members) |
 | `GET /shared/:grantId/files/:fileId/preview/:kind` | viewer, editor | as the owner route (`202 {status:"pending"}`, `404 preview_unsupported`, …) |
-| `GET /shared/:grantId/activity?before=&limit=` | viewer, editor | `{ events, more }` |
+| `GET /shared/:grantId/activity?before=&limit=` | viewer, editor | `{ events, more }` — the reduced member feed below |
 | `POST /shared/:grantId/folders` `{ parentId?, name, onConflict?: "fail"\|"rename" }` | editor | the new shared `Folder` |
 | `PATCH /shared/:grantId/items/:id` `{ name?, parentId?, onConflict? }` | editor | the shared `Folder` or `File`. `:id` is a file or a folder of the grant; `parentId` must be a folder of the same grant. The granted folder itself: `403` |
 | `POST /shared/:grantId/trash` `{ fileIds?, folderIds? }` | editor | `{ ok: true }`. Goes to the **owner's** trash; only the owner restores or purges |
@@ -338,6 +344,20 @@ Every route below starts by re-checking the grant; see D1 for 403 vs 404.
   "folders": [{ "…Folder": "…", "parentId": "60a6d559-…", "isGrantRoot": false }],
   "files": [{ "…File": "…", "name": "Charte.txt", "tagIds": [], "starred": false }] }
 ```
+**Member activity** (`GET /shared/:grantId/activity`). Same envelope as §7.2, deliberately less inside:
+```json
+{ "events": [{ "id": "412", "at": "…", "action": "file.renamed",
+               "actor": { "kind": "user", "userId": null, "displayName": "Alice Tremblay", "me": false },
+               "target": { "type": "file", "id": "ff377875-…", "name": "Charte v2.txt" }, "meta": {} }],
+  "more": false }
+```
+Only these actions, with only these `meta` keys: `file.uploaded { size }`, `file.version_added { size }`,
+`file.version_restored {}`, `file.renamed {}`, `folder.created {}`, `folder.renamed {}`, `items.moved { files, folders }`
+(`target` is `null` for `items.moved`). Only events dated after the member was given access, and only about items
+that are live inside the granted folder now (`target.name` is the present name). `actor.userId` is always `null`;
+`actor.me` tells the member its own actions. No downloads, no former names, no sharing or membership events, nothing
+about trashed items.
+
 - Shared folders carry `isGrantRoot`; the granted folder's `parentId` is `null` and `breadcrumbs` / `path` start at
   it: nothing of the owner's tree above the grant is ever shown. Shared files always have `tagIds: []` and
   `starred: false` (those are the owner's private marks).
@@ -348,7 +368,9 @@ Every route below starts by re-checking the grant; see D1 for 403 vs 404.
   owner's antivirus pipeline. `onConflict`: `rename` (default) | `fail` | `version` — an **uploader may only use
   `rename`** (403 otherwise). There is no `fileId` / `baseVersionId` here: an editor makes a new version by uploading
   under the same name with `onConflict: "version"`.
-- `complete` for an **uploader** returns `file: { id, name, size }` only; for an editor the shared `File`.
+- `complete` for an **uploader** returns `file: { id, name, size }` only, where `name` is the name it sent (D20); for an editor the shared `File`.
+- An **uploader** may only omit `folderId` (or pass the granted folder's id); any other value is `403`.
+- Uploads through a grant expire after 24 h and are capped per member and grant (D21).
 - An upload opened through a grant is invisible to the ordinary `/api/v1/uploads/:id` routes (404) and vice versa;
   it does appear in the member's own `GET /api/v1/uploads` history with `grantId` set and `folderId: null`.
 
@@ -525,6 +547,6 @@ All 1.0 fields are unchanged. New fields:
   last reported (`available: null` before its first heartbeat).
 - `backup.*` are the JSON status files in the backup directory, each `null` when absent, each with `ageS` computed
   from its `at`: `status.json` (written by `scripts/backup.sh`; `ok: false` with `error` when a run stopped),
-  `restore-test.json` (`scripts/restore-test.sh`), `verify.json` (`scripts/backup-verify.sh`), `offnode.json`
+  `restore-test.json` (`scripts/restore-test.sh`), `verify.json` (`scripts/backup-verify.sh`; `dumpChecked` is true only when the dump was really checked — its hash matched the one `status.json` records for that very dump (`dumpHashMatched`), or it was decrypted with the key), `offnode.json`
   (written by the off-node puller: run `scripts/backup-verify.sh <copy> --no-key --write offnode.json --label <node>`
   on the other node and copy the file back into the backup directory).

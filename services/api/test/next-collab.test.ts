@@ -19,7 +19,7 @@ async function upShared(c: Client, grantId: string, body: Record<string, unknown
   if (p.status !== 200) return p;
   return c.post(`/api/v1/shared/${grantId}/uploads/${created.body.id}/complete`, { sha256: sha(data) });
 }
-const grant = async (folderId: string, u: U, role: string, extra = {}) => { const r = await owner.client.post(`/api/v1/folders/${folderId}/members`, { userId: u.userId, role, ...extra }); if (r.status !== 200) throw new Error(JSON.stringify(r.body)); return r.body; };
+const grant = async (folderId: string, u: U, role: string, extra = {}) => { const r = await owner.client.post(`/api/v1/folders/${folderId}/members`, { email: u.email, role, ...extra }); if (r.status !== 200) throw new Error(JSON.stringify(r.body)); return r.body; };
 
 beforeAll(async () => {
   [owner, viewer, editor, uploader, stranger] = [await signup({ quotaBytes: 100_000 }), await signup(), await signup(), await signup(), await signup()];
@@ -52,10 +52,13 @@ describe('owner side', () => {
     expect(m.folder).toMatchObject({ id: shared.id, workspaceName: 'Équipe Projet' });
     expect(m.members.map((x: any) => [x.userId, x.role, x.grantId])).toEqual([[viewer.userId, 'viewer', G.viewer], [editor.userId, 'editor', G.editor], [uploader.userId, 'uploader', G.uploader]]);
     expect(m.members[0]).toMatchObject({ email: viewer.email, displayName: expect.any(String), createdAt: expect.any(String) });
-    expect((await owner.client.post(`/api/v1/folders/${shared.id}/members`, { userId: viewer.userId, role: 'editor' })).body.error).toBe('already_member');
-    expect((await owner.client.post(`/api/v1/folders/${shared.id}/members`, { userId: owner.userId, role: 'editor' })).status).toBe(404); // not to oneself
-    expect((await owner.client.post(`/api/v1/folders/${owner.rootId}/members`, { userId: viewer.userId, role: 'viewer' })).body.error).toBe('root_immutable');
-    expect((await owner.client.post(`/api/v1/folders/${shared.id}/members`, { userId: viewer.userId, role: 'admin' })).status).toBe(400);
+    expect((await owner.client.post(`/api/v1/folders/${shared.id}/members`, { email: viewer.email, role: 'editor' })).body.error).toBe('already_member');
+    // an account identifier alone is not accepted: it could be traded for a name and an address
+    expect((await owner.client.post(`/api/v1/folders/${privateFolder.id}/members`, { userId: stranger.userId, role: 'viewer' })).status).toBe(400);
+    expect(await sql`select 1 from folder_grants where grantee_id = ${stranger.userId}`).toHaveLength(0);
+    expect((await owner.client.post(`/api/v1/folders/${shared.id}/members`, { email: owner.email, role: 'editor' })).status).toBe(404); // not to oneself
+    expect((await owner.client.post(`/api/v1/folders/${owner.rootId}/members`, { email: viewer.email, role: 'viewer' })).body.error).toBe('root_immutable');
+    expect((await owner.client.post(`/api/v1/folders/${shared.id}/members`, { email: viewer.email, role: 'admin' })).status).toBe(400);
     expect((await owner.client.get('/api/v1/collab/outgoing')).body).toMatchObject([{ folder: { id: shared.id }, members: 3 }]);
     expect((await owner.client.patch(`/api/v1/folders/${shared.id}/workspace`, { name: 'Atelier' })).body.workspaceName).toBe('Atelier');
     // members were told
@@ -63,7 +66,7 @@ describe('owner side', () => {
     // nobody else can manage the folder's members: not a stranger, not a member, not even an editor
     for (const u of [stranger, viewer, editor]) {
       expect((await u.client.get(`/api/v1/folders/${shared.id}/members`)).status).toBe(404);
-      expect((await u.client.post(`/api/v1/folders/${shared.id}/members`, { userId: stranger.userId, role: 'editor' })).status).toBe(404);
+      expect((await u.client.post(`/api/v1/folders/${shared.id}/members`, { email: stranger.email, role: 'editor' })).status).toBe(404);
       expect((await u.client.patch(`/api/v1/folders/${shared.id}/members/${viewer.userId}`, { role: 'editor' })).status).toBe(404);
       expect((await u.client.del(`/api/v1/folders/${shared.id}/members/${viewer.userId}`)).status).toBe(404);
       expect((await u.client.patch(`/api/v1/folders/${shared.id}/workspace`, { name: 'Pris' })).status).toBe(404);
@@ -125,7 +128,13 @@ describe('grantee side', () => {
     expect((await uploader.client.post(S('uploader', '/trash'), { fileIds: [doc.id] })).status).toBe(403);
     const r = await upShared(uploader.client, G.uploader!, { name: 'charte.txt' }, Buffer.from('dépôt du fournisseur'));
     expect(r.status).toBe(200);
-    expect(r.body.file).toEqual({ id: expect.any(String), name: 'charte (2).txt', size: Buffer.byteLength('dépôt du fournisseur') }); // never replaces a file it cannot see
+    // never replaces a file it cannot see — and is not told the name the file finally got ("charte (2).txt" would reveal that "charte.txt" exists)
+    expect(r.body.file).toEqual({ id: expect.any(String), name: 'charte.txt', size: Buffer.byteLength('dépôt du fournisseur') });
+    expect((await sql`select name from files where id = ${r.body.file.id}`)[0]!.name).toBe('charte (2).txt');
+    expect(JSON.stringify(r.body)).not.toContain('(2)');
+    // it aims at the granted folder only: a sub-folder that exists and one that does not answer the same
+    expect((await uploader.client.post(S('uploader', '/uploads'), { folderId: inner.id, name: 'x.txt', size: 1 })).status).toBe(403);
+    expect((await uploader.client.post(S('uploader', '/uploads'), { folderId: '00000000-0000-4000-8000-000000000000', name: 'x.txt', size: 1 })).status).toBe(403);
     expect(Object.keys(r.body.file)).toEqual(['id', 'name', 'size']);
     expect((await uploader.client.post(S('uploader', '/uploads'), { name: 'charte.txt', size: 3, onConflict: 'version' })).status).toBe(403);
     expect((await uploader.client.get(S('uploader', `/files/${r.body.file.id}/content`))).status).toBe(403); // not even its own upload
@@ -216,7 +225,7 @@ describe('boundaries', () => {
     expect((await editor.client.post(S('editor', '/trash'), { folderIds: [privateFolder.id] })).status).toBe(404);
     expect((await editor.client.post(S('editor', '/folders'), { parentId: privateFolder.id, name: 'x' })).status).toBe(404);
     expect((await editor.client.post(S('editor', '/uploads'), { folderId: privateFolder.id, name: 'x.txt', size: 1 })).status).toBe(404);
-    expect((await uploader.client.post(S('uploader', '/uploads'), { folderId: owner.rootId, name: 'x.txt', size: 1 })).status).toBe(404);
+    expect((await uploader.client.post(S('uploader', '/uploads'), { folderId: owner.rootId, name: 'x.txt', size: 1 })).status).toBe(403);
     // relative paths cannot climb out
     const climb = await upShared(editor.client, G.editor!, { name: 'x.txt', relativePath: '../../Privé/x.txt' }, Buffer.from('x'));
     expect(climb.status).toBe(200);

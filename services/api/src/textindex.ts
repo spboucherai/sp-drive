@@ -9,21 +9,16 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireUser, userOf } from './auth.ts';
 import { materialize, type ObjectRow } from './blob.ts';
-import { config } from './config.ts';
+import { config, UserError } from './config.ts';
 import { type Db, sql, tx } from './db.ts';
 import { enqueue, type Handler } from './jobs.ts';
-import { assertNotBomb, textkitEmbed, textkitExtract, textkitInfo, textutilToText, ToolError, withWorkDir, zipXmlText } from './tools.ts';
+import { type NodeExtract, ZIP_XML } from './textextract.ts';
+import { assertNotBomb, nodeExtract, textkitEmbed, textkitExtract, textkitInfo, textutilToText, ToolError, withWorkDir } from './tools.ts';
 import { type FileRow, fileJoin, fileJson, fileSelect, getFile } from './tree.ts';
 
 export type TextStatus = 'pending' | 'ready' | 'empty' | 'unsupported' | 'failed';
 export interface Passage { page: number | null; text: string }
 const IMAGE_EXT = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif', 'tif', 'tiff', 'bmp']);
-const ZIP_XML: Record<string, (n: string) => boolean> = {
-  docx: (n) => n === 'word/document.xml' || /^word\/(footnotes|endnotes|header\d*|footer\d*)\.xml$/.test(n),
-  pptx: (n) => /^ppt\/(slides|notesSlides)\/[^/]+\.xml$/.test(n),
-  xlsx: (n) => n === 'xl/sharedStrings.xml' || n === 'xl/workbook.xml',
-  odt: (n) => n === 'content.xml', odp: (n) => n === 'content.xml', ods: (n) => n === 'content.xml',
-};
 const TEXTUTIL = new Set(['doc', 'rtf']);
 
 /** What kind of extraction a name calls for (decided from the sanitised name, like previews). */
@@ -39,33 +34,15 @@ export function textFamily(name: string): 'text' | 'html' | 'zipxml' | 'textutil
   return null;
 }
 
-const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
-const unescapeXml = (s: string) => s.replace(/&(#x[0-9a-fA-F]{1,6}|#\d{1,7}|[a-z]{2,6});/g, (m, e: string) => {
-  if (e[0] === '#') { const n = e[1] === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10); return n > 0 && n < 0x110000 && !(n >= 0xd800 && n < 0xe000) ? String.fromCodePoint(n) : ' '; }
-  return ENTITIES[e] ?? m;
-});
-/** Text of an XML or HTML fragment: block-level ends become line breaks, tags disappear. */
-export function xmlToText(xml: string): string {
-  return unescapeXml(xml.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
-    .replace(/<\/(w:p|a:p|text:p|text:h|p|div|h[1-6]|li|tr|si|table:table-row)>|<(br|w:br|text:line-break)\b[^>]*\/?>/g, '\n').replace(/<\/(w:tc|table:table-cell|td|th|a:tc)>|<w:tab\/>/g, '\t').replace(/<[^>]{0,2000}>/g, ''));
-}
+export { decodeText, xmlToText } from './textextract.ts';
 const clean = (s: string) => s.replace(/\u0000/g, '').replace(/\r\n?/g, '\n').replace(/[ \t\f\v]+/g, ' ').replace(/ ?\n ?/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
-/** Bytes → text: UTF-8 (with or without BOM), UTF-16 with BOM, otherwise Windows-1252. Binary content gives null. */
-export function decodeText(buf: Buffer): string | null {
-  if (buf.length >= 2 && ((buf[0] === 0xff && buf[1] === 0xfe) || (buf[0] === 0xfe && buf[1] === 0xff))) return new TextDecoder(buf[0] === 0xff ? 'utf-16le' : 'utf-16be').decode(buf.subarray(2));
-  let text: string;
-  try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch { text = new TextDecoder('windows-1252').decode(buf); }
-  const sample = text.slice(0, 4000);
-  let odd = 0; for (let i = 0; i < sample.length; i++) { const c = sample.charCodeAt(i); if (c === 0 || (c < 32 && c !== 9 && c !== 10 && c !== 13 && c !== 12)) odd++; }
-  return odd > sample.length * 0.02 ? null : text;
-}
 
-const PASSAGE = 900, MAX_PASSAGES = 4000;
+const PASSAGE = 900, MAX_PASSAGES = 4000, MAX_TEXT_CHARS = 4_000_000;
 /** Cut text into passages of about PASSAGE characters, at paragraph or sentence ends when there is one. */
 export function passagesOf(text: string, page: number | null = null): Passage[] {
   const out: Passage[] = [];
-  let rest = clean(text);
-  while (rest.length) {
+  let rest = clean(text.length > MAX_TEXT_CHARS ? text.slice(0, MAX_TEXT_CHARS) : text);
+  while (rest.length && out.length < MAX_PASSAGES) {
     if (rest.length <= PASSAGE) { out.push({ page, text: rest }); break; }
     const window = rest.slice(0, PASSAGE);
     let cut = window.lastIndexOf('\n\n');
@@ -99,26 +76,18 @@ async function extract(work: string, input: string, name: string, size: number, 
   if (size === 0) return { status: 'empty', source: '', pages: 0, passages: [] };
   if (size > config.extractMaxBytes) return unsupported(`file too large to index (limit ${Math.round(config.extractMaxBytes / 1024 ** 2)} MB)`);
   switch (family) {
-    case 'text': case 'html': {
-      if (size > config.textMaxBytes) return unsupported(`text too large to index (limit ${Math.round(config.textMaxBytes / 1024 ** 2)} MB)`);
-      const text = decodeText(await readFile(input));
-      if (text === null) return unsupported('not a text file');
-      return fromPages('text', [{ page: null, text: (family === 'html' || ext === 'svg' ? xmlToText(text) : text).slice(0, config.extractMaxChars) }], 0);
+    case 'text': case 'html': case 'zipxml': {
+      if (family !== 'zipxml' && size > config.textMaxBytes) return unsupported(`text too large to index (limit ${Math.round(config.textMaxBytes / 1024 ** 2)} MB)`);
+      if (family === 'zipxml') await assertNotBomb(input); // central directory only
+      // parsing happens in a sandboxed child with a kill timer: a hostile file cannot hold the worker's event loop
+      const r: NodeExtract = await nodeExtract(work, family, ext, input, config.extractMaxChars);
+      if (!r.ok) return unsupported('not a text file');
+      return fromPages(r.source, r.pages, r.pageCount);
     }
-    case 'zipxml': {
-      await assertNotBomb(input);
-      const parts = await zipXmlText(input, ZIP_XML[ext]!, 64 * 1024 * 1024);
-      if (ext === 'pptx') {
-        const n = (s: string) => Number(/(\d+)\.xml$/.exec(s)?.[1] ?? 0);
-        const slides = parts.filter((p) => p.name.startsWith('ppt/slides/')).sort((a, b) => n(a.name) - n(b.name));
-        const notes = new Map(parts.filter((p) => p.name.startsWith('ppt/notesSlides/')).map((p) => [n(p.name), xmlToText(p.xml)]));
-        return fromPages('office-xml', slides.map((s) => ({ page: n(s.name), text: `${xmlToText(s.xml)}\n${notes.get(n(s.name)) ?? ''}` })), slides.length);
-      }
-      const main = parts.filter((p) => p.name !== 'xl/workbook.xml');
-      const names = ext === 'xlsx' ? [...(parts.find((p) => p.name === 'xl/workbook.xml')?.xml ?? '').matchAll(/<sheet\b[^>]*\bname="([^"]{1,200})"/g)].map((m) => unescapeXml(m[1]!)).join('\n') : '';
-      return fromPages('office-xml', [{ page: null, text: `${names}\n${main.map((p) => xmlToText(p.xml)).join('\n')}`.slice(0, config.extractMaxChars) }], 0);
+    case 'textutil': {
+      if (size > config.textutilMaxBytes) return unsupported(`document too large to index (limit ${Math.round(config.textutilMaxBytes / 1024 ** 2)} MB)`);
+      return fromPages('textutil', [{ page: null, text: await textutilToText(work, input, config.extractMaxChars) }], 0);
     }
-    case 'textutil': return fromPages('textutil', [{ page: null, text: (await textutilToText(work, input)).slice(0, config.extractMaxChars) }], 0);
     case 'pdf': case 'image': return kit(input);
     case 'legacy-office': {
       // old binary formats: only through the PDF rendition the preview pipeline already produced, when there is one
@@ -147,10 +116,22 @@ async function embedPassages(objectId: string): Promise<void> {
     }
   });
 }
-/** Vector of a search query (same model as the passages), or null when the backend is not available. */
+const queryVectors = new Map<string, { at: number; v: Promise<number[] | null> }>();
+/**
+ * Vector of a search query (same model as the passages), or null when the backend is not available. The same query
+ * asked again within ten minutes, or by several requests at once, starts the helper once. Throws ToolError('busy')
+ * when the helper's queue is full.
+ */
 export async function embedQuery(text: string): Promise<number[] | null> {
   if (!(await semanticBackend()).available) return null;
-  return withWorkDir(async (work) => (await textkitEmbed(work, [{ text: text.slice(0, 2000) }])).vectors[0]?.vector ?? null).catch(() => null);
+  const key = text.slice(0, 2000);
+  const hit = queryVectors.get(key);
+  if (hit && Date.now() - hit.at < 10 * 60_000) { queryVectors.delete(key); queryVectors.set(key, hit); return hit.v; }
+  const v = withWorkDir(async (work) => (await textkitEmbed(work, [{ text: key }])).vectors[0]?.vector ?? null);
+  const entry = { at: Date.now(), v };
+  queryVectors.set(key, entry);
+  if (queryVectors.size > 300) queryVectors.delete(queryVectors.keys().next().value!);
+  try { return await v; } catch (e) { if (queryVectors.get(key) === entry) queryVectors.delete(key); if (e instanceof ToolError && e.code === 'busy') throw e; return null; }
 }
 
 const setStatus = (objectId: string, e: { status: TextStatus; source?: string; pages?: number; chars?: number; error?: string | null }) =>
@@ -168,11 +149,17 @@ export async function enqueueExtract(t: Db, objectId: string, force = false): Pr
 export const extractText: Handler = async (p) => {
   if (!config.indexContent) return;
   const objectId = String(p.objectId);
-  const [o] = await sql<(ObjectRow & { name: string | null; status: string | null })[]>`select o.*, o.size::text,
-    (select f.name from files f join file_versions v on v.file_id = f.id where v.object_id = o.id order by v.created_at limit 1) as name,
+  const [row] = await sql<(ObjectRow & { names: string[] | null; status: string | null })[]>`select o.*, o.size::text,
+    -- every name this content goes by, the files showing it as their current version first: one content can be a
+    -- version of several files, and a name that cannot be indexed (data.bin) must not hide one that can (notes.txt)
+    (select array_agg(n.name) from (select f.name from files f join file_versions v on v.file_id = f.id where v.object_id = o.id
+       order by (f.current_version_id = v.id) desc, (f.trashed_at is null) desc, v.created_at desc limit 40) n) as names,
     (select status from object_text x where x.object_id = o.id) as status from storage_objects o where o.id = ${objectId}`;
-  if (!o?.name || !indexable(o)) return;
-  if (o.status && o.status !== 'pending' && o.status !== 'failed' && !p.force) { if (o.status === 'ready') await embedPassages(objectId); return; }
+  if (!row?.names?.length || !indexable(row)) return;
+  const name = row.names.find((n) => textFamily(n)) ?? row.names[0]!;
+  const o = { ...row, name };
+  // done already — unless it was set aside as unsupported under a name that said nothing and a better name exists now
+  if (o.status && o.status !== 'pending' && o.status !== 'failed' && !p.force && !(o.status === 'unsupported' && textFamily(name))) { if (o.status === 'ready') await embedPassages(objectId); return; }
   const size = Number(o.size), ext = extOf(o.name);
   if (!textFamily(o.name)) { await setStatus(objectId, { status: 'unsupported' }); return; }
   await setStatus(objectId, { status: 'pending' });
@@ -253,39 +240,62 @@ export async function leadPassages(ownerId: string, fileIds: string[], perFile: 
     where f.owner_id = ${ownerId} and f.trashed_at is null and f.id = any(${fileIds}) and p.seq < ${perFile} order by p.seq, f.id limit ${limit}`;
   return rows;
 }
-const vectorCache = new Map<string, { sig: string; at: number; rows: { fileId: string; name: string; objectId: string; seq: number; page: number | null; v: Float32Array }[] }>();
-const SEMANTIC_MAX_PASSAGES = 60000;
-/** Passages nearest to a query vector (cosine; vectors are unit length). Scored in this process: fine up to tens of thousands. */
-export async function semanticPassages(ownerId: string, query: number[], scope: { fileIds?: string[]; folderIds?: string[] }, limit: number): Promise<ScoredPassage[]> {
+// Passage vectors of an account, kept as ONE Float32Array (rows × dimension) plus a small record per passage. The
+// cache is bounded in bytes over all accounts (least recently used first out) and in passages per account.
+interface VectorSet { sig: string; dim: number; bytes: number; vectors: Float32Array; rows: { fileId: string; name: string; objectId: string; seq: number; page: number | null }[] }
+const vectorCache = new Map<string, VectorSet>();
+let vectorCacheBytes = 0;
+export const vectorCacheStats = () => ({ accounts: vectorCache.size, bytes: vectorCacheBytes });
+export const SEMANTIC_MAX_PASSAGES = 30000;
+const ROW_OVERHEAD = 320;
+async function vectorsOf(ownerId: string, dim: number): Promise<VectorSet> {
   const [s] = await sql<{ sig: string }[]>`select count(*)::text || ':' || coalesce(max(greatest(x.updated_at, f.updated_at))::text, '') || ':' || coalesce(max(f.rev)::text, '') as sig
     from files f join file_versions v on v.id = f.current_version_id join object_text x on x.object_id = v.object_id where f.owner_id = ${ownerId} and f.trashed_at is null and x.status = 'ready'`;
-  let c = vectorCache.get(ownerId);
-  if (!c || c.sig !== s!.sig) {
-    const rows = await sql<{ fileId: string; name: string; objectId: string; seq: number; page: number | null; embedding: number[] }[]>`
-      select f.id as "fileId", f.name, p.object_id as "objectId", p.seq, p.page, p.embedding from files f join file_versions v on v.id = f.current_version_id join object_passages p on p.object_id = v.object_id
-      where f.owner_id = ${ownerId} and f.trashed_at is null and p.embedding is not null and array_length(p.embedding, 1) = ${query.length} limit ${SEMANTIC_MAX_PASSAGES}`;
-    c = { sig: s!.sig, at: Date.now(), rows: rows.map((r) => ({ fileId: r.fileId, name: r.name, objectId: r.objectId, seq: r.seq, page: r.page, v: Float32Array.from(r.embedding) })) };
-    vectorCache.set(ownerId, c);
-    if (vectorCache.size > 20) vectorCache.delete(vectorCache.keys().next().value!);
+  const sig = `${dim}:${s!.sig}`;
+  const hit = vectorCache.get(ownerId);
+  if (hit && hit.sig === sig) { vectorCache.delete(ownerId); vectorCache.set(ownerId, hit); return hit; }
+  const [n] = await sql<{ n: number }[]>`select least(count(*), ${SEMANTIC_MAX_PASSAGES})::int as n from files f join file_versions v on v.id = f.current_version_id join object_passages p on p.object_id = v.object_id
+    where f.owner_id = ${ownerId} and f.trashed_at is null and p.embedding is not null and array_length(p.embedding, 1) = ${dim}`;
+  const vectors = new Float32Array(n!.n * dim), rows: VectorSet['rows'] = [];
+  // array_send gives the vector as bytes (20-byte header, then per element a 4-byte length and a big-endian float):
+  // read in small batches straight into the typed array, no intermediate array of numbers
+  const cursor = sql<{ fileId: string; name: string; objectId: string; seq: number; page: number | null; raw: Buffer }[]>`
+    select f.id as "fileId", f.name, p.object_id as "objectId", p.seq, p.page, array_send(p.embedding) as raw from files f join file_versions v on v.id = f.current_version_id join object_passages p on p.object_id = v.object_id
+    where f.owner_id = ${ownerId} and f.trashed_at is null and p.embedding is not null and array_length(p.embedding, 1) = ${dim} limit ${n!.n}`.cursor(400);
+  for await (const batch of cursor) for (const r of batch) {
+    if (rows.length >= n!.n || r.raw.length !== 20 + dim * 8) continue;
+    const base = rows.length * dim;
+    for (let k = 0; k < dim; k++) vectors[base + k] = r.raw.readFloatBE(24 + k * 8);
+    rows.push({ fileId: r.fileId, name: r.name, objectId: r.objectId, seq: r.seq, page: r.page });
   }
+  const set: VectorSet = { sig, dim, bytes: vectors.byteLength + rows.length * ROW_OVERHEAD, vectors, rows };
+  if (hit) vectorCacheBytes -= hit.bytes;
+  vectorCache.delete(ownerId); vectorCache.set(ownerId, set); vectorCacheBytes += set.bytes;
+  while (vectorCacheBytes > config.semanticCacheBytes && vectorCache.size > 1) { const [oldest, v] = vectorCache.entries().next().value!; vectorCache.delete(oldest); vectorCacheBytes -= v.bytes; }
+  return set;
+}
+/** Passages nearest to a query vector (cosine; vectors are unit length). Scored in this process: fine up to tens of thousands. */
+export async function semanticPassages(ownerId: string, query: number[], scope: { fileIds?: string[]; folderIds?: string[] }, limit: number): Promise<ScoredPassage[]> {
+  const c = await vectorsOf(ownerId, query.length);
   const q = Float32Array.from(query);
   const files = scope.fileIds ? new Set(scope.fileIds) : null;
   let inFolders: Set<string> | null = null;
   if (scope.folderIds) inFolders = new Set((await sql<{ id: string }[]>`select id from files where owner_id = ${ownerId} and trashed_at is null and folder_id = any(${scope.folderIds})`).map((r) => r.id));
   const scored: { i: number; score: number }[] = [];
+  const dim = c.dim, vs = c.vectors;
   for (let i = 0; i < c.rows.length; i++) {
     const r = c.rows[i]!;
     if ((files && !files.has(r.fileId)) || (inFolders && !inFolders.has(r.fileId))) continue;
-    let dot = 0; const v = r.v; for (let k = 0; k < v.length; k++) dot += v[k]! * q[k]!;
+    let dot = 0; const base = i * dim; for (let k = 0; k < dim; k++) dot += vs[base + k]! * q[k]!;
     scored.push({ i, score: dot });
   }
   scored.sort((a, b) => b.score - a.score);
   const top = scored.slice(0, limit);
   if (!top.length) return [];
   const texts = await sql<{ object_id: string; seq: number; text: string }[]>`select object_id, seq, text from object_passages
-    where object_id = any(${[...new Set(top.map((x) => c!.rows[x.i]!.objectId))]}) and seq = any(${[...new Set(top.map((x) => c!.rows[x.i]!.seq))]})`;
+    where object_id = any(${[...new Set(top.map((x) => c.rows[x.i]!.objectId))]}) and seq = any(${[...new Set(top.map((x) => c.rows[x.i]!.seq))]})`;
   const byKey = new Map(texts.map((x) => [`${x.object_id}:${x.seq}`, x.text]));
-  return top.map((x) => { const r = c!.rows[x.i]!; return { fileId: r.fileId, name: r.name, objectId: r.objectId, seq: r.seq, page: r.page, text: byKey.get(`${r.objectId}:${r.seq}`) ?? '', score: Math.round(x.score * 10000) / 10000 }; }).filter((x) => x.text);
+  return top.map((x) => { const r = c.rows[x.i]!; return { fileId: r.fileId, name: r.name, objectId: r.objectId, seq: r.seq, page: r.page, text: byKey.get(`${r.objectId}:${r.seq}`) ?? '', score: Math.round(x.score * 10000) / 10000 }; }).filter((x) => x.text);
 }
 /** Ids of a live folder and of every live folder below it. */
 export async function subtreeFolderIds(t: Db, ownerId: string, folderId: string): Promise<string[]> {
@@ -329,7 +339,7 @@ export function textRoutes(app: FastifyInstance): void {
   app.get('/api/v1/search/semantic', { ...authed, config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req) => {
     const q = z.object({ q: z.string().trim().min(1).max(500), limit: z.coerce.number().int().min(1).max(50).default(10) }).parse(req.query);
     const u = userOf(req);
-    const vector = await embedQuery(q.q);
+    const vector = await embedQuery(q.q).catch((e) => { throw e instanceof ToolError && e.code === 'busy' ? new UserError('busy', 'search is busy, try again in a moment', 503, { retryAfterS: 2 }) : e; });
     if (!vector) return { available: false, hits: [] };
     // several passages of one file may be near: the best one speaks for the file
     const near = await semanticPassages(u.id, vector, {}, q.limit * 4);

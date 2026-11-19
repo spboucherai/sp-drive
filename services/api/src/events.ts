@@ -14,10 +14,15 @@ const byOwner = new Map<string, Set<Client>>();
 const pending = new Map<string, NodeJS.Timeout>();
 const lastSent = new Map<string, number>();
 const MAX_STREAMS_PER_USER = 16, MIN_GAP_MS = 1000;
+// Slots are counted when a request ARRIVES, before anything is awaited: forty simultaneous opens cannot all pass a
+// check made on streams that do not exist yet.
+const slots = new Map<string, number>();
+let totalSlots = 0;
 let listening: Promise<{ unlisten: () => Promise<void> }[]> | undefined;
 
 /** Numbers for tests and the administration view. */
 export const eventStats = () => ({ owners: byOwner.size, streams: [...byOwner.values()].reduce((n, s) => n + s.size, 0), timers: pending.size });
+export const eventSlots = () => ({ total: totalSlots, accounts: slots.size });
 
 function onChange(ownerId: string): void {
   if (!byOwner.has(ownerId) || pending.has(ownerId)) return;
@@ -42,10 +47,13 @@ const listen = () => (listening ??= Promise.all([sql.listen('spd_change', onChan
 export function eventRoutes(app: FastifyInstance): void {
   app.get('/api/v1/sync/events', { preHandler: requireUser }, async (req, reply) => {
     const u = userOf(req), sessionId = req.session!.id;
-    if ((byOwner.get(u.id)?.size ?? 0) >= MAX_STREAMS_PER_USER) throw new UserError('too_many_streams', 'too many event streams for this account', 429);
-    await listen();
-    const head = await headRev(sql, u.id);
-    const stream = openSse(req, reply);
+    if ((slots.get(u.id) ?? 0) >= MAX_STREAMS_PER_USER) throw new UserError('too_many_streams', 'too many event streams for this account', 429);
+    if (totalSlots >= config.eventsMaxStreams) throw new UserError('too_many_streams', 'the server has too many event streams open, poll for now', 503);
+    slots.set(u.id, (slots.get(u.id) ?? 0) + 1); totalSlots++;
+    let released = false;
+    const release = () => { if (released) return; released = true; totalSlots--; const n = (slots.get(u.id) ?? 1) - 1; if (n > 0) slots.set(u.id, n); else slots.delete(u.id); };
+    let head: number, stream: SseStream;
+    try { await listen(); head = await headRev(sql, u.id); stream = openSse(req, reply); } catch (e) { release(); throw e; }
     const client: Client = { stream, sessionId };
     let set = byOwner.get(u.id);
     if (!set) byOwner.set(u.id, (set = new Set()));
@@ -58,7 +66,7 @@ export function eventRoutes(app: FastifyInstance): void {
         .then((r) => { if (!r.length) stream.end(); }, () => {});
     }, config.eventsPingMs);
     stream.onClose(() => {
-      clearInterval(ping);
+      clearInterval(ping); release();
       const s = byOwner.get(u.id);
       s?.delete(client);
       if (s && !s.size) { byOwner.delete(u.id); lastSent.delete(u.id); const t = pending.get(u.id); if (t) { clearTimeout(t); pending.delete(u.id); } }

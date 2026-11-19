@@ -125,7 +125,7 @@ async function afterNewContent(t: Db, object: ObjectRow): Promise<void> {
   if (object.scan_status === 'pending') await enqueue(t, 'scan_object', { objectId: object.id }, { dedupeKey: `scan:${object.id}` });
   await enqueue(t, 'preview', { objectId: object.id }, { dedupeKey: `preview:${object.id}` });
   // content already known to be clean (the owner's identical object, a portal deposit) is indexed at once; the rest after its scan
-  if (object.scan_status === 'clean' && config.indexContent) await enqueue(t, 'extract_text', { objectId: object.id }, { dedupeKey: `text:${object.id}`, maxAttempts: 2 });
+  if ((object.scan_status === 'clean' || (config.avMode === 'optional' && object.scan_status === 'error')) && config.indexContent) await enqueue(t, 'extract_text', { objectId: object.id }, { dedupeKey: `text:${object.id}`, maxAttempts: 2 });
 }
 
 export async function renameFolder(t: Db, ownerId: string, id: string, rawName: string): Promise<void> {

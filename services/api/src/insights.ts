@@ -55,28 +55,34 @@ async function folderBreakdown(ownerId: string, folder: FolderRow) {
 const popcount32 = (x: number) => { x -= (x >>> 1) & 0x55555555; x = (x & 0x33333333) + ((x >>> 2) & 0x33333333); return (((x + (x >>> 4)) & 0x0f0f0f0f) * 0x01010101) >>> 24; };
 /** Number of differing bits between two 64-bit hashes written as sixteen hexadecimal digits. */
 export const hamming = (a: string, b: string) => popcount32((parseInt(a.slice(0, 8), 16) ^ parseInt(b.slice(0, 8), 16)) >>> 0) + popcount32((parseInt(a.slice(8), 16) ^ parseInt(b.slice(8), 16)) >>> 0);
-const SIMILAR_MAX_IMAGES = 6000;
-/** Groups of live images that look alike (different bytes, close perceptual hashes). Single linkage, capped. */
-async function similarImages(ownerId: string, distance: number) {
-  const rows = await sql<(FileRow & { dhash: string })[]>`select ${fileSelect(sql)}, h.dhash from files f ${fileJoin(sql)} join object_phash h on h.object_id = o.id
-    where f.owner_id = ${ownerId} and f.trashed_at is null order by f.created_at limit ${SIMILAR_MAX_IMAGES}`;
-  // a blank or single-colour picture hashes to all zeros or all ones: such hashes say nothing about likeness
-  const usable = rows.filter((r) => !/^(0{16}|f{16})$/.test(r.dhash));
-  const hi = usable.map((r) => parseInt(r.dhash.slice(0, 8), 16)), lo = usable.map((r) => parseInt(r.dhash.slice(8), 16));
-  const parent = usable.map((_, i) => i);
+// Bounds: the newest SIMILAR_MAX_IMAGES images are compared pairwise on two 32-bit halves (a few million cheap integer
+// operations, no allocation per pair); the answer holds at most 200 groups of at most 200 files.
+export const SIMILAR_MAX_IMAGES = 4000, SIMILAR_MAX_GROUPS = 200, SIMILAR_MAX_GROUP_FILES = 200;
+/** Indices of hashes that look alike, grouped by single linkage (union-find; nothing is stored per pair). */
+export function groupByDistance(hashes: string[], distance: number): number[][] {
+  const n = hashes.length, hi = new Uint32Array(n), lo = new Uint32Array(n), parent = new Int32Array(n);
+  for (let i = 0; i < n; i++) { hi[i] = parseInt(hashes[i]!.slice(0, 8), 16); lo[i] = parseInt(hashes[i]!.slice(8), 16); parent[i] = i; }
   const find = (i: number): number => { while (parent[i] !== i) { parent[i] = parent[parent[i]!]!; i = parent[i]!; } return i; };
-  const worst = new Map<string, number>();
-  for (let i = 0; i < usable.length; i++) for (let j = i + 1; j < usable.length; j++) {
-    if (usable[i]!.sha256 === usable[j]!.sha256) continue; // identical bytes are the business of mode=exact
-    const d = popcount32((hi[i]! ^ hi[j]!) >>> 0) + popcount32((lo[i]! ^ lo[j]!) >>> 0);
-    if (d <= distance) { const a = find(i), b = find(j); if (a !== b) parent[b] = a; worst.set(`${i}:${j}`, d); }
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+    if (popcount32((hi[i]! ^ hi[j]!) >>> 0) + popcount32((lo[i]! ^ lo[j]!) >>> 0) <= distance) { const a = find(i), b = find(j); if (a !== b) parent[b] = a; }
   }
   const groups = new Map<number, number[]>();
-  usable.forEach((_, i) => { const r = find(i); groups.set(r, [...(groups.get(r) ?? []), i]); });
-  return [...groups.values()].filter((g) => new Set(g.map((i) => usable[i]!.sha256)).size > 1).map((g) => {
-    let max = 0; for (const [k, d] of worst) { const [a, b] = k.split(':').map(Number); if (g.includes(a!) && g.includes(b!)) max = Math.max(max, d); }
-    return { maxDistance: max, files: g.map((i) => ({ ...fileJson(usable[i]!), dhash: usable[i]!.dhash })) };
-  }).sort((a, b) => b.files.length - a.files.length).slice(0, 500);
+  for (let i = 0; i < n; i++) { const r = find(i); const g = groups.get(r); if (g) g.push(i); else groups.set(r, [i]); }
+  return [...groups.values()].filter((g) => g.length > 1);
+}
+/** Groups of live images that look alike (different bytes, close perceptual hashes). */
+async function similarImages(ownerId: string, distance: number) {
+  const rows = await sql<(FileRow & { dhash: string })[]>`select ${fileSelect(sql)}, h.dhash from files f ${fileJoin(sql)} join object_phash h on h.object_id = o.id
+    where f.owner_id = ${ownerId} and f.trashed_at is null order by f.created_at desc, f.id limit ${SIMILAR_MAX_IMAGES}`;
+  // a blank or single-colour picture hashes to all zeros or all ones: such hashes say nothing about likeness
+  const usable = rows.filter((r) => !/^(0{16}|f{16})$/.test(r.dhash));
+  return groupByDistance(usable.map((r) => r.dhash), distance)
+    .filter((g) => { const first = usable[g[0]!]!.sha256; return g.some((i) => usable[i]!.sha256 !== first); }) // identical bytes alone are the business of mode=exact
+    .sort((a, b) => b.length - a.length).slice(0, SIMILAR_MAX_GROUPS).map((g) => {
+      const members = g.slice(0, SIMILAR_MAX_GROUP_FILES), probe = members.slice(0, 48);
+      let max = 0; for (let x = 0; x < probe.length; x++) for (let y = x + 1; y < probe.length; y++) max = Math.max(max, hamming(usable[probe[x]!]!.dhash, usable[probe[y]!]!.dhash));
+      return { maxDistance: max, files: members.map((i) => ({ ...fileJson(usable[i]!), dhash: usable[i]!.dhash })) };
+    });
 }
 /** Groups of live files with identical content; `distinctNames` flags "same content, different names". */
 async function exactDuplicates(ownerId: string) {

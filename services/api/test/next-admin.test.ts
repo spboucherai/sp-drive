@@ -74,7 +74,18 @@ describe('administration view', () => {
     // an off-node copy has no key: the same script, told so, writes offnode.json
     v = verify(['--no-key', '--write', 'offnode.json', '--label', 'M4M64c']);
     expect(v.code, v.out).toBe(0);
-    expect(JSON.parse(readFileSync(join(out, 'offnode.json'), 'utf8'))).toMatchObject({ ok: true, host: 'M4M64c', dumpDecrypted: false });
+    expect(JSON.parse(readFileSync(join(out, 'offnode.json'), 'utf8'))).toMatchObject({ ok: true, host: 'M4M64c', dumpChecked: true, dumpHashMatched: true, dumpDecrypted: false });
+    // without the key the recorded hash is the only proof: a status file that does not vouch for this dump means "not checked"
+    const statusFile = join(out, 'status.json'), kept = readFileSync(statusFile, 'utf8');
+    for (const broken of [kept.replace(/"dumpSha256":"[0-9a-f]{64}",/, ''), kept.replace(/"dump":"[^"]+"/, '"dump":"sp-drive-19990101-0000.dump.enc"')]) {
+      writeFileSync(statusFile, broken);
+      v = verify(['--no-key', '--write', 'offnode.json']);
+      expect(v.code).toBe(1); expect(v.out).toContain('could not be checked');
+      expect(JSON.parse(readFileSync(join(out, 'offnode.json'), 'utf8'))).toMatchObject({ ok: false, dumpChecked: false, dumpHashMatched: false });
+      expect(verify().code).toBe(0); // with the key the dump itself is opened: still a real check
+    }
+    writeFileSync(statusFile, kept);
+    expect(verify(['--no-key', '--write', 'offnode.json', '--label', 'M4M64c']).code).toBe(0);
     config.backupDir = out;
     const b = (await admin.client.get('/api/v1/admin/system')).body.backup;
     expect(b.last).toMatchObject({ ok: true, dump: expect.any(String), ageS: expect.any(Number) }); expect(b.last.ageS).toBeLessThan(120);

@@ -6,7 +6,7 @@
 //
 //   spd-textkit probe
 //   spd-textkit extract <input> <output.json> [--max-pages N] [--ocr on|off] [--ocr-max-pages N] [--max-chars N] [--langs fr-FR,en-US]
-//   spd-textkit dhash <image>
+//   spd-textkit dhash <image> [--max-pixels N]
 //   spd-textkit embed <input.json> <output.json> [--model sentence|contextual]
 import AppKit
 import CoreGraphics
@@ -35,8 +35,14 @@ func recognise(_ image: CGImage, langs: [String]) -> String {
   let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
   return lines.joined(separator: "\n")
 }
+/** Largest picture (in pixels) that is ever decoded; set by --max-pixels. A tiny file can declare a gigapixel image. */
+var maxPixels = 120_000_000
 func loadImage(_ path: String, maxPixel: Int) -> CGImage? {
   guard let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil) else { return nil }
+  // the declared size is read from the header, before any pixel is decoded
+  guard let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+        let w = (props[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue, let h = (props[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue, w > 0, h > 0 else { return nil }
+  if w > 100_000 || h > 100_000 || w * h > maxPixels { fail("image too large to decode (\(w) x \(h) pixels)", code: 4) }
   let opts: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: maxPixel]
   guard let img = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return nil }
   return flatten(img)
@@ -179,6 +185,7 @@ func probe() {
 }
 
 let argv = Array(CommandLine.arguments.dropFirst())
+if let m = option("max-pixels", argv), let n = Int(m), n > 0 { maxPixels = n }
 switch argv.first {
 case "probe": probe()
 case "extract": extract(Array(argv.dropFirst()))

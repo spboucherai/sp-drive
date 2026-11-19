@@ -53,8 +53,8 @@ if (!existing.some((f) => f.name === 'Projets')) {
   await upload(alice.token, equipe.id, 'Charte.txt', Buffer.from("Charte de l'équipe : respect, rigueur, entraide.\n"));
   await upload(alice.token, root, 'Budget.csv', Buffer.from('poste;montant\nloyer;1200\nassurance;110\n'));
   await upload(alice.token, root, 'Copie du budget.csv', Buffer.from('poste;montant\nloyer;1200\nassurance;110\n'));
-  await call(alice.token, 'POST', `/api/v1/folders/${equipe.id}/members`, { userId: bob.id, role: 'viewer', workspaceName: 'Équipe Projet' });
-  await call(alice.token, 'POST', `/api/v1/folders/${depot.id}/members`, { userId: bob.id, role: 'uploader' });
+  await call(alice.token, 'POST', `/api/v1/folders/${equipe.id}/members`, { email: 'bob@example.test', role: 'viewer', workspaceName: 'Équipe Projet' });
+  await call(alice.token, 'POST', `/api/v1/folders/${depot.id}/members`, { email: 'bob@example.test', role: 'uploader' });
   await call(alice.token, 'POST', '/api/v1/collections', { name: 'Documents récents', color: 'blue', rule: { match: 'all', conditions: [{ field: 'modified', op: 'within', value: 30 }, { field: 'kind', op: 'isNot', value: 'video' }], sort: { by: 'updated', dir: 'desc' } } }).catch(() => {});
 }
 writeFileSync(out, `${JSON.stringify({ base, createdAt: new Date().toISOString(), alice: { email: 'alice@example.test', role: 'admin', userId: alice.id, token: alice.token }, bob: { email: 'bob@example.test', role: 'user', userId: bob.id, token: bob.token } }, null, 1)}\n`, { mode: 0o600 });

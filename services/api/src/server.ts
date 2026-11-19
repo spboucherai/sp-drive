@@ -73,13 +73,17 @@ export async function buildServer(o: { logger?: boolean } = {}): Promise<Fastify
     if (!req.url.startsWith('/api/')) { reply.header('Content-Security-Policy', CSP); return; }
     reply.header('Cache-Control', 'no-store');
     // CSRF: state-changing calls must come from our own pages (custom header forces a preflight we never grant, origin must match)
+    const chunk = isUploadChunk(req.method, req.url) && (hasBearer(req) || !!req.headers.cookie);
+    const limit = (key: string, max: number) => { const wait = chunkBudget.take(key, max); if (wait) throw new UserError('rate_limited', 'too many requests, slow down', 429, { retryAfterS: wait }); };
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       const origin = req.headers.origin;
       // a bearer token is not an ambient credential: no other site can make a browser send it, so native clients skip the header
-      if (!(hasBearer(req) && !req.headers.cookie) && (req.headers['x-spd-csrf'] !== '1' || (origin && origin !== config.origin))) throw new UserError('csrf', 'request refused', 403);
+      if (!(hasBearer(req) && !req.headers.cookie) && (req.headers['x-spd-csrf'] !== '1' || (origin && origin !== config.origin))) {
+        // chunk requests left the per-address budget (see above): one refused here must still be counted somewhere
+        if (chunk) limit(`ip:${req.ip}`, UPLOAD_CHUNKS_BAD_CREDENTIAL_PER_MIN);
+        throw new UserError('csrf', 'request refused', 403);
+      }
     }
-    const chunk = isUploadChunk(req.method, req.url) && (hasBearer(req) || !!req.headers.cookie);
-    const limit = (key: string, max: number) => { const wait = chunkBudget.take(key, max); if (wait) throw new UserError('rate_limited', 'too many requests, slow down', 429, { retryAfterS: wait }); };
     try { req.session = await loadSession(req, reply); } catch (e) { if (chunk) limit(`ip:${req.ip}`, UPLOAD_CHUNKS_BAD_CREDENTIAL_PER_MIN); throw e; } // a bearer that is not a session is refused here
     if (chunk) { if (req.session) limit(`u:${req.session.user.id}`, UPLOAD_CHUNKS_PER_MIN); else limit(`ip:${req.ip}`, UPLOAD_CHUNKS_BAD_CREDENTIAL_PER_MIN); }
   });
