@@ -130,6 +130,23 @@ describe('previews and scanning', () => {
 
 describe('migrations', () => {
   it('revert and re-apply cleanly', async () => {
+    // 003 (2.0) removes exactly what it added: the 1.0 schema with native clients is back, data untouched
+    const [before] = await sql<{ files: number; sessions: number }[]>`select (select count(*)::int from files) as files, (select count(*)::int from sessions) as sessions`;
+    expect(await migrateDown()).toBe('003_next');
+    expect(await sql`select 1 from information_schema.tables where table_name in ('object_text', 'object_passages', 'object_phash', 'folder_grants', 'collections', 'system_state')`).toHaveLength(0);
+    expect(await sql`select 1 from information_schema.columns where (table_name, column_name) in (('sessions', 'client_platform'), ('users', 'ai_external'), ('folders', 'workspace_name'), ('uploads', 'grant_id'))`).toHaveLength(0);
+    expect(await sql`select 1 from pg_ts_config where cfgname in ('spd_fr', 'spd_en', 'spd_plain')`).toHaveLength(0);
+    expect(await sql`select 1 from pg_trigger where tgname in ('files_notify', 'folders_notify', 'notifications_notify')`).toHaveLength(0);
+    expect(await sql`select 1 from pg_proc where proname in ('spd_notify_change', 'spd_notify_notification')`).toHaveLength(0);
+    const [after] = await sql<{ files: number; sessions: number }[]>`select (select count(*)::int from files) as files, (select count(*)::int from sessions) as sessions`;
+    expect(after).toEqual(before);
+    expect(before!.files).toBeGreaterThan(0);
+    // the 1.0 triggers still work on the reverted schema (a write draws a revision, nothing references a dropped function)
+    await sql`update files set updated_at = now() where id = (select id from files limit 1)`;
+    // …and 003 applies again on a database that holds data
+    expect(await migrate()).toEqual(['003_next']);
+    expect(await sql`select 1 from information_schema.tables where table_name in ('object_text', 'folder_grants')`).toHaveLength(2);
+    expect(await migrateDown()).toBe('003_next');
     // 002 leaves the first schema intact (the web application alone keeps working on it)
     expect(await migrateDown()).toBe('002_native_clients');
     expect(await sql`select 1 from information_schema.columns where table_name = 'files' and column_name = 'rev'`).toHaveLength(0);
@@ -137,7 +154,7 @@ describe('migrations', () => {
     expect(await sql`select 1 from information_schema.tables where table_name = 'files'`).toHaveLength(1);
     expect(await migrateDown()).toBe('001_init');
     expect(await sql`select 1 from information_schema.tables where table_name = 'files'`).toHaveLength(0);
-    expect(await migrate()).toEqual(['001_init', '002_native_clients']);
+    expect(await migrate()).toEqual(['001_init', '002_native_clients', '003_next']);
     expect(await sql`select 1 from information_schema.tables where table_name = 'files'`).toHaveLength(1);
     expect(await sql`select 1 from information_schema.columns where table_name = 'files' and column_name = 'rev'`).toHaveLength(1);
   });

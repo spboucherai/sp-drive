@@ -15,7 +15,7 @@ import { sha256File } from './crypto.ts';
 import { audit, type Db, lockOwner, sql, tx } from './db.ts';
 import { addFile, addVersion, ensurePath, type FileRow, fileJson, getFile, getFolder } from './tree.ts';
 
-export interface UploadRow { id: string; owner_id: string; actor_user_id: string | null; item_id: string | null; folder_id: string | null; name: string; size: string; received: string; on_conflict: 'fail' | 'rename' | 'version'; status: string; file_id: string | null; expires_at: Date; base_version_id?: string | null }
+export interface UploadRow { id: string; owner_id: string; actor_user_id: string | null; item_id: string | null; folder_id: string | null; name: string; size: string; received: string; on_conflict: 'fail' | 'rename' | 'version'; status: string; file_id: string | null; expires_at: Date; base_version_id?: string | null; grant_id?: string | null }
 export const uploadPath = (u: Pick<UploadRow, 'id' | 'item_id'>) => join(u.item_id ? config.quarantineDir : config.tmpDir, `up-${u.id}`);
 export const uploadJson = (u: UploadRow) => ({ id: u.id, name: u.name, size: Number(u.size), received: Number(u.received), status: u.status, fileId: u.file_id });
 
@@ -87,7 +87,7 @@ const versionConflict = (f: FileRow) => new UserError('version_conflict', 'the f
 export function uploadRoutes(app: FastifyInstance): void {
   const authed = { preHandler: requireUser };
   const mine = async (t: Db, userId: string, id: string) => {
-    const [u] = await t<UploadRow[]>`select *, size::text, received::text from uploads where id = ${id} and actor_user_id = ${userId}`;
+    const [u] = await t<UploadRow[]>`select *, size::text, received::text from uploads where id = ${id} and actor_user_id = ${userId} and grant_id is null`; // uploads made through a grant live under /shared
     if (!u) throw notFound('upload not found');
     return u;
   };
@@ -129,14 +129,14 @@ export function uploadRoutes(app: FastifyInstance): void {
     const sha = req.headers['x-chunk-sha256'];
     const userId = userOf(req).id;
     const u = await appendChunk(id, q.offset, req.body as Readable, typeof sha === 'string' ? Sha.parse(sha) : undefined,
-      async (_t, row) => { if (row.actor_user_id !== userId) throw notFound('upload not found'); });
+      async (_t, row) => { if (row.actor_user_id !== userId || row.grant_id) throw notFound('upload not found'); });
     return uploadJson(u);
   });
   app.post('/api/v1/uploads/:id/complete', authed, async (req) => {
     const { id } = z.object({ id: z.uuid() }).parse(req.params);
     const b = z.object({ sha256: Sha.optional() }).parse(req.body ?? {});
     const user = userOf(req);
-    const [claimed] = await sql<UploadRow[]>`update uploads set status = 'completing', updated_at = now() where id = ${id} and actor_user_id = ${user.id} and status = 'active' returning *, size::text, received::text`;
+    const [claimed] = await sql<UploadRow[]>`update uploads set status = 'completing', updated_at = now() where id = ${id} and actor_user_id = ${user.id} and grant_id is null and status = 'active' returning *, size::text, received::text`;
     if (!claimed) { // unknown, foreign, already done (idempotent answer) or being completed
       const u = await mine(sql, user.id, id);
       if (u.status === 'done' && u.file_id) return { ...uploadJson(u), file: fileJson(await getFile(sql, user.id, u.file_id, { trashed: true })) };
@@ -178,14 +178,14 @@ export function uploadRoutes(app: FastifyInstance): void {
     // A refused new version (version_conflict) keeps its bytes: the client can turn it into a separate file next to the
     // original (a conflict copy) without sending the content again.
     const [r] = b.asNewFile
-      ? await sql`update uploads set file_id = null, base_version_id = null, name = ${sanitizeName(b.asNewFile.name)}, on_conflict = 'rename' where id = ${id} and actor_user_id = ${userId} and status = 'active' and file_id is not null returning id`
-      : await sql`update uploads set on_conflict = ${b.onConflict!} where id = ${id} and actor_user_id = ${userId} and status = 'active' and file_id is null returning id`;
+      ? await sql`update uploads set file_id = null, base_version_id = null, name = ${sanitizeName(b.asNewFile.name)}, on_conflict = 'rename' where id = ${id} and actor_user_id = ${userId} and grant_id is null and status = 'active' and file_id is not null returning id`
+      : await sql`update uploads set on_conflict = ${b.onConflict!} where id = ${id} and actor_user_id = ${userId} and grant_id is null and status = 'active' and file_id is null returning id`;
     if (!r) throw notFound('upload not found');
     return { ok: true };
   });
   app.delete('/api/v1/uploads/:id', authed, async (req) => {
     const { id } = z.object({ id: z.uuid() }).parse(req.params);
-    const [u] = await sql<UploadRow[]>`update uploads set status = 'aborted', updated_at = now() where id = ${id} and actor_user_id = ${userOf(req).id} and status = 'active' returning *, size::text, received::text`;
+    const [u] = await sql<UploadRow[]>`update uploads set status = 'aborted', updated_at = now() where id = ${id} and actor_user_id = ${userOf(req).id} and grant_id is null and status = 'active' returning *, size::text, received::text`;
     if (!u) throw notFound('upload not found');
     await rm(uploadPath(u), { force: true });
     return { ok: true };

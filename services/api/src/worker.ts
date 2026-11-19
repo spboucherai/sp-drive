@@ -10,7 +10,8 @@ import { config } from './config.ts';
 import { audit, type Db, lockOwner, notify, sql, SYSTEM, tx } from './db.ts';
 import { enqueue, type Handler, requeueStuck } from './jobs.ts';
 import { BLOCKED_EXT, type RequestRow } from './requests.ts';
-import { clamdScan, listTar, listZip, officeToPdf, assertNotBomb, ScannerUnavailable, sheetPreview, sipsJpeg, ToolError, videoFrame, withWorkDir } from './tools.ts';
+import { enqueueExtract, extractText } from './textindex.ts';
+import { clamdScan, clamdVersion, listTar, listZip, officeAvailable, officeToPdf, assertNotBomb, ScannerUnavailable, sheetPreview, sipsJpeg, textkitDhash, textkitInfo, ToolError, videoFrame, withWorkDir } from './tools.ts';
 import { addFile, createFolder } from './tree.ts';
 import { assertQuota } from './uploads.ts';
 
@@ -20,7 +21,7 @@ const scanObject: Handler = async (p) => {
   if (!o || o.scan_status !== 'pending') return;
   let r;
   try { r = await clamdScan(readSealed(o), Number(o.size)); } catch (e) {
-    if (e instanceof ScannerUnavailable && config.avMode === 'optional') { await sql`update storage_objects set scan_status = 'error', scan_detail = 'scanner_unavailable', scanned_at = now() where id = ${o.id}`; return; }
+    if (e instanceof ScannerUnavailable && config.avMode === 'optional') { await sql`update storage_objects set scan_status = 'error', scan_detail = 'scanner_unavailable', scanned_at = now() where id = ${o.id}`; await enqueueExtract(sql, o.id); return; }
     throw e; // retried with back-off; the object stays "pending"
   }
   await tx(async (t) => {
@@ -29,7 +30,10 @@ const scanObject: Handler = async (p) => {
       const files = await t<{ id: string; name: string }[]>`select distinct f.id, f.name from files f join file_versions v on v.file_id = f.id where v.object_id = ${o.id} limit 20`;
       await audit(t, SYSTEM, 'scan.infected', { ownerId: o.owner_id, targetType: 'object', targetId: o.id, meta: { signature: r.signature, files: files.map((f) => f.id) } });
       await notify(t, o.owner_id, 'scan.infected', { signature: r.signature, files });
+      // whatever was indexed under an earlier verdict goes away with it
+      await t`delete from object_passages where object_id = ${o.id}`; await t`delete from object_text where object_id = ${o.id}`;
     }
+    if (r.status === 'clean') await enqueueExtract(t, o.id); // text is only ever read from content the antivirus cleared
   });
 };
 
@@ -44,6 +48,9 @@ async function savePreview(objectId: string, kind: Kind, path: string): Promise<
       on conflict (object_id, kind) do update set status = 'ready', storage_key = excluded.storage_key, wrapped_key = excluded.wrapped_key, size = excluded.size, error = null, updated_at = now()`;
   } catch (e) { await driver.remove(sealed.storage_key); throw e; } // the object was deleted meanwhile
   if (old[0]?.storage_key) await driver.remove(old[0].storage_key);
+  if (kind === 'thumb') await enqueue(sql, 'phash', { objectId }, { dedupeKey: `phash:${objectId}`, maxAttempts: 2 });
+  // an old binary office file has no text of its own: its PDF rendition is what gets indexed
+  if (kind === 'pdf' && config.indexContent) { const [x] = await sql`select 1 from object_text where object_id = ${objectId} and status = 'unsupported'`; if (x) await enqueueExtract(sql, objectId, true); }
 }
 const markPreview = (objectId: string, kind: Kind, status: 'failed' | 'unsupported' | 'pending', error?: string) =>
   sql`insert into previews (object_id, kind, status, error) values (${objectId}, ${kind}, ${status}, ${error ?? null})
@@ -230,5 +237,35 @@ export async function housekeeping(): Promise<void> {
   for (const o of owners) await enqueue(sql, 'gc_objects', { ownerId: o.owner_id }, { dedupeKey: `gc:${o.owner_id}` });
 }
 
-export const handlers: Record<string, Handler> = { scan_object: scanObject, preview, process_submission: processSubmission, gc_objects: gcObjects };
+// --- perceptual hash of images (similar-image detection) ---------------------------------------------------
+const PHASH_EXT = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif', 'tif', 'tiff', 'bmp']);
+/** dHash of an image, computed on its existing thumbnail (already decoded, already small). */
+const phash: Handler = async (p) => {
+  const objectId = String(p.objectId);
+  const [o] = await sql<{ name: string | null; storage_key: string | null; wrapped_key: Buffer | null; size: string | null }[]>`
+    select (select f.name from files f join file_versions v on v.file_id = f.id where v.object_id = o.id order by v.created_at limit 1) as name, pv.storage_key, pv.wrapped_key, pv.size::text
+    from storage_objects o left join previews pv on pv.object_id = o.id and pv.kind = 'thumb' and pv.status = 'ready' where o.id = ${objectId}`;
+  if (!o?.name || !PHASH_EXT.has(extOf(o.name)) || !o.storage_key || !o.wrapped_key || !(await textkitInfo())) return;
+  const dhash = await withWorkDir(async (work) => {
+    const thumb = join(work, 'thumb.jpg');
+    await materialize({ storage_key: o.storage_key!, wrapped_key: o.wrapped_key!, size: Number(o.size) }, thumb);
+    return textkitDhash(work, thumb);
+  }).catch((e) => { if (e instanceof ToolError) return null; throw e; });
+  if (dhash) await sql`insert into object_phash (object_id, dhash) values (${objectId}, ${dhash}) on conflict (object_id) do update set dhash = excluded.dhash`.catch(() => {});
+};
+/** Queue the hash of every image that has a thumbnail and no hash yet (backfill, `cli reindex`). */
+export async function rehashImages(): Promise<number> {
+  const rows = await sql<{ object_id: string }[]>`select pv.object_id from previews pv where pv.kind = 'thumb' and pv.status = 'ready' and not exists (select 1 from object_phash h where h.object_id = pv.object_id)`;
+  for (const r of rows) await enqueue(sql, 'phash', { objectId: r.object_id }, { dedupeKey: `phash:${r.object_id}`, maxAttempts: 2 });
+  return rows.length;
+}
+
+/** What this worker can do right now, published for the administration view (the API process cannot see it otherwise). */
+export async function heartbeat(): Promise<void> {
+  const [converter, kit, av] = await Promise.all([officeAvailable().catch(() => false), textkitInfo().catch(() => null), clamdVersion().catch(() => null)]);
+  const value = { pid: process.pid, at: new Date().toISOString(), converter: { available: converter, path: config.soffice }, textkit: { available: !!kit, contextual: !!kit?.contextual?.assets }, antivirus: av };
+  await sql`insert into system_state (key, value) values ('worker', ${sql.json(value as never)}) on conflict (key) do update set value = excluded.value, updated_at = now()`;
+}
+
+export const handlers: Record<string, Handler> = { scan_object: scanObject, preview, process_submission: processSubmission, gc_objects: gcObjects, extract_text: extractText, phash };
 export type { Db };

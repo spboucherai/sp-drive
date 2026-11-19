@@ -55,7 +55,7 @@ export function shareRoutes(app: FastifyInstance): void {
     const [s] = await sql<{ id: string }[]>`insert into shares (owner_id, file_id, folder_id, token_hash, label, can_download, password_hash, expires_at, max_views, max_downloads, single_use)
       values (${u.id}, ${b.fileId ?? null}, ${b.folderId ?? null}, ${tokenHash(token)}, ${b.label ?? ''}, ${b.canDownload ?? true}, ${b.password ? await hashPassword(b.password) : null},
         ${b.expiresAt ?? null}, ${b.maxViews ?? null}, ${b.maxDownloads ?? null}, ${b.singleUse ?? false}) returning id`;
-    await audit(sql, actorOf(req), 'share.created', { targetType: 'share', targetId: s!.id, meta: { target: b.fileId ? 'file' : 'folder', password: !!b.password, expires: !!b.expiresAt } });
+    await audit(sql, actorOf(req), 'share.created', { targetType: 'share', targetId: s!.id, meta: { target: b.fileId ? 'file' : 'folder', ...(b.fileId ? { fileId: b.fileId } : { folderId: b.folderId }), password: !!b.password, expires: !!b.expiresAt } });
     const [row] = await sql<ShareRow[]>`select ${ownSelect(sql)} where s.id = ${s!.id}`;
     return { share: shareJson(row!), url: `${config.origin}/s/${token}` }; // the only time the link is available
   });

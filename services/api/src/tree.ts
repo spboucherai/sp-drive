@@ -2,12 +2,12 @@
 // transaction that holds lockOwner(ownerId); the unique indexes are the backstop, not the mechanism.
 import { nameKey, nextFreeName, previewKind, sanitizeName } from '@spd/shared';
 import type { ObjectRow } from './blob.ts';
-import { notFound, UserError } from './config.ts';
+import { config, notFound, UserError } from './config.ts';
 import type { Db } from './db.ts';
 import { enqueue } from './jobs.ts';
 
 export type OnConflict = 'fail' | 'rename' | 'version';
-export interface FolderRow { id: string; owner_id: string; parent_id: string | null; name: string; name_key: string; starred_at: Date | null; trashed_at: Date | null; trash_root: string | null; created_at: Date; updated_at: Date; rev?: bigint | number | string }
+export interface FolderRow { id: string; owner_id: string; parent_id: string | null; name: string; name_key: string; workspace_name?: string | null; starred_at: Date | null; trashed_at: Date | null; trash_root: string | null; created_at: Date; updated_at: Date; rev?: bigint | number | string }
 export interface FileRow {
   id: string; owner_id: string; folder_id: string; name: string; name_key: string; current_version_id: string; size: string; sha256: string; origin: string;
   starred_at: Date | null; trashed_at: Date | null; trash_root: string | null; created_at: Date; updated_at: Date;
@@ -16,7 +16,7 @@ export interface FileRow {
 }
 
 export const folderJson = (f: FolderRow) => ({ id: f.id, type: 'folder' as const, name: f.name, parentId: f.parent_id, starred: !!f.starred_at, createdAt: f.created_at, updatedAt: f.updated_at, trashedAt: f.trashed_at,
-  trashRoot: f.trash_root === f.id, rev: Number(f.rev ?? 0) });
+  trashRoot: f.trash_root === f.id, rev: Number(f.rev ?? 0), workspaceName: f.workspace_name ?? null });
 export const fileJson = (f: FileRow) => ({
   id: f.id, type: 'file' as const, name: f.name, folderId: f.folder_id, size: Number(f.size), sha256: f.sha256, kind: previewKind(f.name), origin: f.origin, starred: !!f.starred_at,
   createdAt: f.created_at, updatedAt: f.updated_at, trashedAt: f.trashed_at, scan: f.scan_status ?? 'pending', thumb: f.thumb === 'ready', tagIds: f.tag_ids ?? [], versions: f.versions ?? 1,
@@ -124,6 +124,8 @@ export async function addVersion(t: Db, ownerId: string, fileId: string, object:
 async function afterNewContent(t: Db, object: ObjectRow): Promise<void> {
   if (object.scan_status === 'pending') await enqueue(t, 'scan_object', { objectId: object.id }, { dedupeKey: `scan:${object.id}` });
   await enqueue(t, 'preview', { objectId: object.id }, { dedupeKey: `preview:${object.id}` });
+  // content already known to be clean (the owner's identical object, a portal deposit) is indexed at once; the rest after its scan
+  if (object.scan_status === 'clean' && config.indexContent) await enqueue(t, 'extract_text', { objectId: object.id }, { dedupeKey: `text:${object.id}`, maxAttempts: 2 });
 }
 
 export async function renameFolder(t: Db, ownerId: string, id: string, rawName: string): Promise<void> {

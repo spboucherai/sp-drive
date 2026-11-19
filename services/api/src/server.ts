@@ -1,16 +1,24 @@
-import { statfs } from 'node:fs/promises';
+import { readFile, statfs } from 'node:fs/promises';
+import { join } from 'node:path';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { aiRoutes } from './ai/routes.ts';
 import { authRoutes, hasBearer, loadSession, requireAdmin, requireUser } from './auth.ts';
+import { collabRoutes } from './collab.ts';
+import { collectionRoutes } from './collections.ts';
 import { config, UserError } from './config.ts';
 import { sql } from './db.ts';
+import { eventRoutes, eventStats } from './events.ts';
 import { fileRoutes } from './files.ts';
+import { insightRoutes } from './insights.ts';
+import { features, metaRoutes } from './meta.ts';
 import { requestRoutes } from './requests.ts';
 import { shareRoutes } from './shares.ts';
 import { syncRoutes } from './sync.ts';
+import { semanticBackend, textRoutes } from './textindex.ts';
 import { clamdPing } from './tools.ts';
 import { uploadRoutes } from './uploads.ts';
 
@@ -84,10 +92,43 @@ export async function buildServer(o: { logger?: boolean } = {}): Promise<Fastify
       (select count(*)::int from files where trashed_at is null) as files, (select count(*)::int from storage_objects) as objects, (select coalesce(sum(size), 0)::text from storage_objects) as bytes,
       (select count(*)::int from shares where revoked_at is null) as shares, (select count(*)::int from upload_requests where revoked_at is null) as requests,
       (select count(*)::int from upload_items where status = 'quarantined') as quarantined`;
-    return { ...r, avMode: config.avMode, commit: config.commit, counts: { ...c!, bytes: Number(c!.bytes) } };
+    // --- 2.0 additions: what an administrator needs to see to trust the machine room ---
+    const [jobs, failures, state, index, sem] = await Promise.all([
+      sql<{ kind: string; status: string; n: number; oldest: Date | null }[]>`select kind, status, count(*)::int as n, min(created_at) as oldest from jobs where status <> 'done' or finished_at > now() - interval '24 hours' group by kind, status order by kind, status`,
+      sql<{ kind: string; n: number; error: string | null }[]>`select kind, count(*)::int as n, (array_agg(error order by updated_at desc))[1] as error from previews where status = 'failed' group by kind order by kind`,
+      sql<{ key: string; value: Record<string, any>; updated_at: Date }[]>`select key, value, updated_at from system_state`,
+      sql<{ status: string; n: number }[]>`select status, count(*)::int as n from object_text group by status`,
+      semanticBackend(),
+    ]);
+    const worker = state.find((s) => s.key === 'worker');
+    const ageS = (d: Date | string | null | undefined) => (d ? Math.max(0, Math.round((Date.now() - new Date(d).getTime()) / 1000)) : null);
+    const backupFile = async (name: string) => readFile(join(config.backupDir, name), 'utf8').then((s) => JSON.parse(s) as Record<string, unknown>, () => null);
+    const [backup, restoreTest, verify, offNode] = await Promise.all([backupFile('status.json'), backupFile('restore-test.json'), backupFile('verify.json'), backupFile('offnode.json')]);
+    const at = (o: Record<string, unknown> | null) => (o && typeof o.at === 'string' ? o.at : null);
+    return {
+      ...r, avMode: config.avMode, commit: config.commit, counts: { ...c!, bytes: Number(c!.bytes) },
+      version: config.version, features: await features(),
+      worker: worker ? { alive: ageS(worker.updated_at)! < 180, heartbeatAgeS: ageS(worker.updated_at), pid: worker.value.pid ?? null } : { alive: false, heartbeatAgeS: null, pid: null },
+      jobs: jobs.map((j) => ({ kind: j.kind, status: j.status, count: j.n, oldestAgeS: j.status === 'queued' || j.status === 'running' ? ageS(j.oldest) : null })),
+      previewFailures: failures.map((f) => ({ kind: f.kind, count: f.n, lastError: f.error })),
+      converter: worker?.value.converter ?? { available: null, path: config.soffice },
+      textkit: worker?.value.textkit ?? { available: null },
+      antivirusSignatures: worker?.value.antivirus ? { ...worker.value.antivirus, ageS: ageS(worker.value.antivirus.signaturesAt) } : null,
+      index: { enabled: config.indexContent, ocr: config.ocr, byStatus: Object.fromEntries(index.map((i) => [i.status, i.n])), semantic: sem },
+      events: eventStats(),
+      backup: {
+        dir: config.backupDir,
+        last: backup ? { ...backup, ageS: ageS(at(backup)) } : null,
+        restoreTest: restoreTest ? { ...restoreTest, ageS: ageS(at(restoreTest)) } : null,
+        verify: verify ? { ...verify, ageS: ageS(at(verify)) } : null,
+        offNode: offNode ? { ...offNode, ageS: ageS(at(offNode)) } : null,
+      },
+    };
   });
 
   authRoutes(app); fileRoutes(app); uploadRoutes(app); shareRoutes(app); requestRoutes(app); syncRoutes(app);
+  // 2.0 (all additive): capability discovery, sync events, content index, intelligence, collections, activity/storage, private sharing
+  metaRoutes(app); eventRoutes(app); textRoutes(app); aiRoutes(app); collectionRoutes(app); insightRoutes(app); collabRoutes(app);
 
   if (config.webDir) {
     await app.register(fastifyStatic, { root: config.webDir, wildcard: false, maxAge: 0,

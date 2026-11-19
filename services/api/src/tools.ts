@@ -65,7 +65,18 @@ export function clamdScan(src: Readable, size: number): Promise<ScanResult> {
 const sbString = (s: string) => `"${s.replace(/["\\]/g, '\\$&')}"`;
 /** Seatbelt matches resolved paths (/tmp is /private/tmp): every path in the profile is made real first. */
 const real = (p: string) => { try { return realpathSync(p); } catch { return p; } };
-const profile = (work: string) => {
+/**
+ * Apple's on-device models (Vision, NaturalLanguage) keep their compiled form in a cache under the real home
+ * directory, named after the process, and read models another system daemon compiled. Only the text helper gets
+ * these two paths, which hold no user data; everything else under the home directory stays denied.
+ */
+const modelCacheRules = () => {
+  const h = real(homedir());
+  const quoted = h.replace(/[^A-Za-z0-9/_-]/g, (c) => `\\${c}`); // a regular expression that matches the path literally
+  return `(allow file-read* file-write* (subpath ${sbString(join(h, 'Library/Caches/spd-textkit'))}))
+(allow file-read* (regex #"^${quoted}/Library/Daemon Containers/[^/]+/Data/CompiledModels/"))`;
+};
+const profile = (work: string, extra = '') => {
   const home = sbString(real(homedir())), data = sbString(real(config.dataDir)), w = sbString(real(work)), app = sbString(real(config.appDir));
   const keyDir = sbString(real(dirname(config.masterKeyFile))), key = sbString(real(config.masterKeyFile));
   // no network at all, except LibreOffice's own instance pipe (a Unix socket named OSL_PIPE_*): the database and antivirus sockets stay out of reach
@@ -77,17 +88,18 @@ const profile = (work: string) => {
 (allow file-read* file-write* (subpath ${w}))
 (allow file-read* (subpath ${app}))
 (allow file-read-metadata (subpath ${home}) (subpath ${data}))
+${extra}
 (deny file-read* file-write* (literal ${key}))`;
 };
 
 export class ToolError extends Error { constructor(public code: string, message: string) { super(message); } }
 export interface RunResult { code: number | null; stdout: string; stderr: string }
 /** Run a tool under the sandbox with wall-clock and CPU limits; the whole process group is killed on timeout. */
-export function runSandboxed(work: string, cmd: string, args: string[], o: { timeoutMs?: number; cpuS?: number; env?: Record<string, string> } = {}): Promise<RunResult> {
+export function runSandboxed(work: string, cmd: string, args: string[], o: { timeoutMs?: number; cpuS?: number; env?: Record<string, string>; modelCache?: boolean } = {}): Promise<RunResult> {
   const timeoutMs = o.timeoutMs ?? config.convertTimeoutMs;
   const sh = `ulimit -t ${o.cpuS ?? Math.ceil(timeoutMs / 1000) * 2}; ulimit -c 0; exec "$@"`;
   return new Promise((resolve, reject) => {
-    const child = spawn('/usr/bin/sandbox-exec', ['-p', profile(work), '/bin/sh', '-c', sh, 'sh', cmd, ...args], {
+    const child = spawn('/usr/bin/sandbox-exec', ['-p', profile(work, o.modelCache ? modelCacheRules() : ''), '/bin/sh', '-c', sh, 'sh', cmd, ...args], {
       cwd: work, detached: true, stdio: ['ignore', 'pipe', 'pipe'],
       env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin', HOME: work, TMPDIR: work, LANG: 'en_US.UTF-8', ...o.env },
     });
@@ -218,4 +230,94 @@ export async function sheetPreview(work: string, input: string): Promise<SheetPr
   const r = await runSandboxed(work, process.execPath, ['--max-old-space-size=768', ...child, input, out], { timeoutMs: 60_000 });
   if (r.code !== 0 || !(await exists(out))) throw new ToolError('convert_failed', `the workbook could not be read: ${r.stderr.trim().split('\n').pop()?.slice(0, 200) ?? `exit ${r.code}`}`);
   return JSON.parse(await readFile(out, 'utf8')) as SheetPreview;
+}
+
+// --- local text helper (infra/textkit, compiled by scripts/textkit-build.sh) --------------------------------
+let textkitProbe: { at: number; info: TextkitInfo | null } | undefined;
+export interface TextkitInfo { ok: boolean; sentence: { fr: number; en: number }; contextual: { dimension: number; assets: boolean; identifier: string } | null }
+/** What the helper can do on this machine (cached ten minutes); null when it is not built or does not start. */
+export async function textkitInfo(): Promise<TextkitInfo | null> {
+  if (textkitProbe && Date.now() - textkitProbe.at < 10 * 60_000) return textkitProbe.info;
+  let info: TextkitInfo | null = null;
+  if (await exists(config.textkit)) {
+    info = await withWorkDir((w) => runSandboxed(w, config.textkit, ['probe'], { timeoutMs: 30_000, modelCache: true })
+      .then((r) => (r.code === 0 ? (JSON.parse(r.stdout) as TextkitInfo) : null), () => null));
+  }
+  textkitProbe = { at: Date.now(), info };
+  return info;
+}
+export const resetTextkitProbe = () => { textkitProbe = undefined; };
+export interface TextkitPage { page: number; text: string; ocr: boolean }
+export interface TextkitExtract { kind: 'pdf' | 'image'; locked?: boolean; pageCount: number; pages: TextkitPage[]; ocrPages: number; textPages: number; truncated: boolean; source?: string }
+/** Text of a PDF (text layer, OCR for pages without one) or of an image (OCR). Runs in the sandbox, offline. */
+export async function textkitExtract(work: string, input: string, o: { ocr: boolean }): Promise<TextkitExtract> {
+  const out = join(work, 'text.json');
+  const r = await runSandboxed(work, config.textkit, ['extract', input, out, '--ocr', o.ocr ? 'on' : 'off', '--max-pages', String(config.extractMaxPages), '--ocr-max-pages', String(config.ocrMaxPages),
+    '--max-chars', String(config.extractMaxChars)], { timeoutMs: config.extractTimeoutMs, modelCache: true });
+  if (r.code !== 0 || !(await exists(out))) throw new ToolError('extract_failed', `text extraction failed: ${r.stderr.trim().split('\n').pop()?.slice(0, 160) || `exit ${r.code}`}`);
+  return JSON.parse(await readFile(out, 'utf8')) as TextkitExtract;
+}
+/** 64-bit difference hash of an image, sixteen hexadecimal digits. */
+export async function textkitDhash(work: string, input: string): Promise<string> {
+  const r = await runSandboxed(work, config.textkit, ['dhash', input], { timeoutMs: 30_000, modelCache: true });
+  const h = r.stdout.trim();
+  if (r.code !== 0 || !/^[0-9a-f]{16}$/.test(h)) throw new ToolError('hash_failed', 'the image could not be hashed');
+  return h;
+}
+export interface TextVector { lang: string; vector: number[] | null }
+/** Sentence vectors from the on-device model. Nothing leaves the machine. */
+export async function textkitEmbed(work: string, texts: { text: string; lang?: string }[], model = 'contextual'): Promise<{ dim: number; vectors: TextVector[] }> {
+  const { writeFile } = await import('node:fs/promises');
+  const input = join(work, `embed-in-${Math.random().toString(36).slice(2, 8)}.json`), out = `${input}.out`;
+  await writeFile(input, JSON.stringify({ texts }), { mode: 0o600 });
+  const r = await runSandboxed(work, config.textkit, ['embed', input, out, '--model', model], { timeoutMs: 120_000, modelCache: true });
+  if (r.code !== 0 || !(await exists(out))) throw new ToolError('embed_failed', 'the embedding model did not answer');
+  return JSON.parse(await readFile(out, 'utf8')) as { dim: number; vectors: TextVector[] };
+}
+/** Word-processor formats macOS reads natively (doc, rtf, docx, odt, html) → plain text (textutil, sandboxed). */
+export async function textutilToText(work: string, input: string): Promise<string> {
+  const out = join(work, 'textutil.txt');
+  const r = await runSandboxed(work, '/usr/bin/textutil', ['-convert', 'txt', '-encoding', 'UTF-8', '-output', out, input], { timeoutMs: 60_000 });
+  if (r.code !== 0 || !(await stat(out).then(() => true, () => false))) throw new ToolError('extract_failed', `text extraction failed: ${(r.stderr || r.stdout).trim().slice(0, 160) || `exit ${r.code}`}`);
+  return readFile(out, 'utf8');
+}
+/** Text of the XML parts of a zip-based document (docx, pptx, xlsx, odt, odp, ods), read with hard caps; nothing is written. */
+export function zipXmlText(path: string, wanted: (name: string) => boolean, maxBytes: number): Promise<{ name: string; xml: string }[]> {
+  return new Promise((resolve, reject) => {
+    yauzl.open(path, { lazyEntries: true, autoClose: true, validateEntrySizes: true }, (err, zip) => {
+      if (err || !zip) return reject(new ToolError('bad_archive', `unreadable document: ${err?.message ?? 'unknown'}`));
+      const parts: { name: string; xml: string }[] = [];
+      let total = 0, seen = 0;
+      const done = () => { zip.close(); resolve(parts); };
+      zip.on('entry', (e: yauzl.Entry) => {
+        if (++seen > 20000 || total >= maxBytes) return done();
+        if (!wanted(e.fileName) || e.uncompressedSize > maxBytes) return zip.readEntry();
+        zip.openReadStream(e, (er, stream) => {
+          if (er || !stream) return zip.readEntry();
+          const chunks: Buffer[] = []; let n = 0;
+          stream.on('data', (c: Buffer) => { n += c.length; total += c.length; if (n > maxBytes || total > maxBytes) { stream.destroy(); done(); } else chunks.push(c); });
+          stream.on('end', () => { parts.push({ name: e.fileName, xml: Buffer.concat(chunks).toString('utf8') }); zip.readEntry(); });
+          stream.on('error', () => zip.readEntry());
+        });
+      });
+      zip.on('end', () => resolve(parts));
+      zip.on('error', (e) => reject(new ToolError('bad_archive', `unreadable document: ${e.message}`)));
+      zip.readEntry();
+    });
+  });
+}
+/** clamd's own account of its signature database: "ClamAV 1.4.3/27824/Wed Nov 18 09:24:11 2026". */
+export function clamdVersion(): Promise<{ engine: string; signatures: number; signaturesAt: string | null } | null> {
+  return new Promise((resolve) => {
+    if (!config.clamdSocket) return resolve(null);
+    const s = connect(config.clamdSocket);
+    let out = '';
+    s.setTimeout(3000, () => { s.destroy(); resolve(null); });
+    s.on('error', () => resolve(null)).on('data', (d) => (out += d)).on('close', () => {
+      const m = /^ClamAV ([^/]+)\/(\d+)\/(.+)$/.exec(out.replace(/\0/g, '').trim());
+      const at = m ? new Date(m[3]!) : null;
+      resolve(m ? { engine: m[1]!, signatures: Number(m[2]), signaturesAt: at && !Number.isNaN(at.getTime()) ? at.toISOString() : null } : null);
+    });
+    s.write('zVERSION\0');
+  });
 }

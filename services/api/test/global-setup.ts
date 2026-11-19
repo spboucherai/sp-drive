@@ -17,6 +17,8 @@ export async function setup(): Promise<void> {
   const pg = (bin: string, ...args: string[]) => execFileSync(existsSync(`/opt/homebrew/opt/postgresql@17/bin/${bin}`) ? `/opt/homebrew/opt/postgresql@17/bin/${bin}` : bin, ['-h', '127.0.0.1', ...args], { stdio: 'pipe' });
   pg('dropdb', '--if-exists', DB);
   pg('createdb', DB);
+  // the local text helper (PDF text, OCR, perceptual hash, sentence vectors): compiled once, then only when its source changes
+  try { execFileSync('/bin/zsh', ['scripts/textkit-build.sh'], { stdio: 'pipe', timeout: 240_000 }); } catch { /* the suites that need it fail loudly */ }
   // a real antivirus daemon when its signatures are available (brew install clamav + freshclam); otherwise the AV tests fail loudly
   if (existsSync(join(CLAM_DB, 'main.cvd')) || existsSync(join(CLAM_DB, 'main.cld'))) {
     const conf = join(ROOT, 'clamd.conf');

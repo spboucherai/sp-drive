@@ -3,7 +3,8 @@ import type { FastifyInstance } from 'fastify';
 import { nameKey, sanitizeName } from '@spd/shared';
 import { z } from 'zod';
 import { actorOf, requireUser, userOf } from './auth.ts';
-import { notFound, UserError } from './config.ts';
+import { KIND_EXT } from './collections.ts';
+import { config, notFound, UserError } from './config.ts';
 import { contentOf, previewPlan, sendPreview, sendSealed, sendZip, type ZipEntry } from './content.ts';
 import { audit, type Db, lockOwner, sql, tx } from './db.ts';
 import {
@@ -11,11 +12,15 @@ import {
   purgeItems, renameFile, renameFolder, restoreItems, subtreeFiles, trashItems, addVersion,
 } from './tree.ts';
 import type { ObjectRow } from './blob.ts';
+import { duplicates } from './insights.ts';
+import { snippet, tidySnippet, tsQuery } from './textindex.ts';
 
 const Id = z.uuid();
 const Sel = z.object({ fileIds: z.array(Id).max(2000).default([]), folderIds: z.array(Id).max(2000).default([]) }).refine((s) => s.fileIds.length + s.folderIds.length > 0, 'empty selection');
 const SORTS = { name: 'name_key', updated: 'updated_at', size: 'size', created: 'created_at' } as const;
 const Sort = z.object({ sort: z.enum(['name', 'updated', 'size', 'created']).default('name'), dir: z.enum(['asc', 'desc']).default('asc') });
+/** Identifiers of a bulk operation, kept in the audit trail so each item's history can name it (capped). */
+const ids = (b: { fileIds: string[]; folderIds: string[] }) => ({ fileIds: b.fileIds.slice(0, 200), folderIds: b.folderIds.slice(0, 200) });
 const order = (t: Db, s: z.infer<typeof Sort>, alias: string, hasSize: boolean) =>
   t`${t(alias)}.${t(s.sort === 'size' && !hasSize ? 'name_key' : SORTS[s.sort])} ${s.dir === 'desc' ? t`desc` : t`asc`}, ${t(alias)}.id`;
 
@@ -60,7 +65,7 @@ export function fileRoutes(app: FastifyInstance): void {
     const u = userOf(req);
     return tx(async (t) => {
       await lockOwner(t, u.id);
-      if (b.name !== undefined) await renameFolder(t, u.id, id, b.name);
+      if (b.name !== undefined) { const before = await getFolder(t, u.id, id); await renameFolder(t, u.id, id, b.name); await audit(t, actorOf(req), 'folder.renamed', { targetType: 'folder', targetId: id, meta: { from: before.name } }); }
       if (b.starred !== undefined) { await getFolder(t, u.id, id); await t`update folders set starred_at = ${b.starred ? new Date() : null} where id = ${id}`; }
       return folderJson(await getFolder(t, u.id, id));
     });
@@ -88,8 +93,8 @@ export function fileRoutes(app: FastifyInstance): void {
     const u = userOf(req);
     return tx(async (t) => {
       await lockOwner(t, u.id);
-      await getFile(t, u.id, id);
-      if (b.name !== undefined) await renameFile(t, u.id, id, b.name);
+      const before = await getFile(t, u.id, id);
+      if (b.name !== undefined) { await renameFile(t, u.id, id, b.name); await audit(t, actorOf(req), 'file.renamed', { targetType: 'file', targetId: id, meta: { from: before.name } }); }
       if (b.starred !== undefined) await t`update files set starred_at = ${b.starred ? new Date() : null} where id = ${id}`;
       if (b.tagIds) {
         const own = await t<{ id: string }[]>`select id from tags where owner_id = ${u.id} and id = any(${b.tagIds})`;
@@ -110,6 +115,8 @@ export function fileRoutes(app: FastifyInstance): void {
     const c = await contentOf(sql, f.id, q.v);
     // the owner may still take an infected file out, but only as an explicit download
     if (c.scan_status === 'infected' && !(q.download && q.infected === 'ack')) throw new UserError('infected', 'this file was flagged by the antivirus', 451);
+    // explicit downloads are part of a file's history; previews, inline reads and the later ranges of one transfer are not
+    if (q.download && (!req.headers.range || /^bytes=0-/.test(req.headers.range))) await audit(sql, actorOf(req), 'file.downloaded', { targetType: 'file', targetId: f.id, meta: q.v ? { versionId: q.v } : {} });
     return sendSealed(req, reply, c, { name: f.name, etag: c.sha256, mode: q.download ? 'download' : q.as === 'text' ? 'text' : 'inline' });
   } });
   app.get('/api/v1/files/:id/preview/:kind', authed, async (req, reply) => {
@@ -172,24 +179,24 @@ export function fileRoutes(app: FastifyInstance): void {
   app.post('/api/v1/move', authed, async (req) => {
     const b = Sel.and(z.object({ destinationId: z.union([Id, z.literal('root')]), onConflict: z.enum(['fail', 'rename']).default('fail') })).parse(req.body);
     const u = userOf(req);
-    await tx(async (t) => { await lockOwner(t, u.id); await moveItems(t, u.id, b, b.destinationId, b.onConflict); await audit(t, actorOf(req), 'items.moved', { meta: { files: b.fileIds.length, folders: b.folderIds.length } }); });
+    await tx(async (t) => { await lockOwner(t, u.id); await moveItems(t, u.id, b, b.destinationId, b.onConflict); await audit(t, actorOf(req), 'items.moved', { meta: { files: b.fileIds.length, folders: b.folderIds.length, ...ids(b), destinationId: (await getFolder(t, u.id, b.destinationId)).id } }); });
     return { ok: true };
   });
   app.post('/api/v1/copy', authed, async (req) => {
     const b = Sel.and(z.object({ destinationId: z.union([Id, z.literal('root')]) })).parse(req.body);
     const u = userOf(req);
-    return tx(async (t) => { await lockOwner(t, u.id); const n = await copyItems(t, u.id, b, b.destinationId); await audit(t, actorOf(req), 'items.copied', { meta: n }); return n; });
+    return tx(async (t) => { await lockOwner(t, u.id); const n = await copyItems(t, u.id, b, b.destinationId); await audit(t, actorOf(req), 'items.copied', { meta: { ...n, ...ids(b) } }); return n; });
   });
   app.post('/api/v1/trash', authed, async (req) => {
     const b = Sel.parse(req.body);
     const u = userOf(req);
-    await tx(async (t) => { await lockOwner(t, u.id); await trashItems(t, u.id, b); await audit(t, actorOf(req), 'items.trashed', { meta: { files: b.fileIds.length, folders: b.folderIds.length } }); });
+    await tx(async (t) => { await lockOwner(t, u.id); await trashItems(t, u.id, b); await audit(t, actorOf(req), 'items.trashed', { meta: { files: b.fileIds.length, folders: b.folderIds.length, ...ids(b) } }); });
     return { ok: true };
   });
   app.post('/api/v1/restore', authed, async (req) => {
     const b = Sel.parse(req.body);
     const u = userOf(req);
-    await tx(async (t) => { await lockOwner(t, u.id); await restoreItems(t, u.id, b); await audit(t, actorOf(req), 'items.restored', { meta: { files: b.fileIds.length, folders: b.folderIds.length } }); });
+    await tx(async (t) => { await lockOwner(t, u.id); await restoreItems(t, u.id, b); await audit(t, actorOf(req), 'items.restored', { meta: { files: b.fileIds.length, folders: b.folderIds.length, ...ids(b) } }); });
     return { ok: true };
   });
   app.post('/api/v1/purge', authed, async (req) => {
@@ -220,43 +227,54 @@ export function fileRoutes(app: FastifyInstance): void {
     ]);
     return { folders: folders.map(folderJson), files: files.map(fileJson) };
   });
-  /** Name search with filters. Accent- and case-insensitive; scoped to the owner's live items. */
+  /**
+   * Search with filters. `in=name` matches names (accent- and case-insensitive), `in=content` matches the text extracted
+   * from the files, `in=all` (default) both. With a query, every hit says where it matched; content hits carry a snippet.
+   */
   app.get('/api/v1/search', authed, async (req) => {
     const q = z.object({
       q: z.string().trim().max(200).default(''), kind: z.enum(['any', 'folder', 'image', 'pdf', 'document', 'sheet', 'video', 'audio', 'archive', 'text']).default('any'),
       tag: Id.optional(), starred: z.enum(['1']).optional(), from: z.iso.date().optional(), to: z.iso.date().optional(), minSize: z.coerce.number().int().min(0).optional(), maxSize: z.coerce.number().int().min(0).optional(),
+      in: z.enum(['name', 'content', 'all']).default('all'),
     }).and(Sort).parse(req.query);
     const u = userOf(req);
     const pattern = `%${nameKey(q.q).replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-    const EXT: Record<string, string[]> = {
-      image: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif', 'svg'], pdf: ['pdf'], document: ['doc', 'docx', 'odt', 'ppt', 'pptx', 'odp', 'rtf', 'pages', 'key'], sheet: ['xlsx', 'xls', 'ods', 'csv', 'numbers'],
-      video: ['mp4', 'm4v', 'mov', 'webm', 'mkv', 'avi'], audio: ['mp3', 'm4a', 'aac', 'wav', 'ogg', 'flac'], archive: ['zip', 'tar', 'gz', 'tgz', '7z', 'rar'], text: ['txt', 'md', 'json', 'xml', 'log', 'yaml', 'yml', 'tex'],
-    };
-    const exts = EXT[q.kind];
+    const exts = q.kind === 'any' || q.kind === 'folder' ? undefined : KIND_EXT[q.kind];
     const fileOnly = q.kind !== 'any' && q.kind !== 'folder' || q.tag || q.minSize !== undefined || q.maxSize !== undefined;
+    // without a query there is nothing to look for in the text: the filters alone select, as before
+    const byName = !q.q || q.in !== 'content', byContent = !!q.q && q.in !== 'name' && config.indexContent;
     const match = (t: Db, a: string) => (q.q ? t`and unaccent(${t(a)}.name_key) like unaccent(${pattern})` : t``);
     const dates = (t: Db, a: string) => t`${q.from ? t`and ${t(a)}.updated_at >= ${q.from}::date` : t``} ${q.to ? t`and ${t(a)}.updated_at < ${q.to}::date + 1` : t``}`;
-    const [folders, files] = await Promise.all([
-      fileOnly ? [] : sql<FolderRow[]>`select d.* from folders d where d.owner_id = ${u.id} and d.trashed_at is null and d.parent_id is not null ${match(sql, 'd')} ${dates(sql, 'd')}
+    const filters = (t: Db) => t`${dates(t, 'f')}
+      ${exts ? t`and lower(substring(f.name from '\\.([^.]+)$')) = any(${exts})` : t``}
+      ${q.tag ? t`and exists (select 1 from file_tags ft join tags tg on tg.id = ft.tag_id where ft.file_id = f.id and tg.id = ${q.tag} and tg.owner_id = ${u.id})` : t``}
+      ${q.starred ? t`and f.starred_at is not null` : t``} ${q.minSize !== undefined ? t`and f.size >= ${q.minSize}` : t``} ${q.maxSize !== undefined ? t`and f.size <= ${q.maxSize}` : t``}`;
+    type Hit = FileRow & { match_page?: number | null; match_snippet?: string | null };
+    const [folders, named, inText] = await Promise.all([
+      fileOnly || !byName ? [] : sql<FolderRow[]>`select d.* from folders d where d.owner_id = ${u.id} and d.trashed_at is null and d.parent_id is not null ${match(sql, 'd')} ${dates(sql, 'd')}
         ${q.starred ? sql`and d.starred_at is not null` : sql``} order by ${order(sql, q, 'd', false)} limit 300`,
-      q.kind === 'folder' ? [] : sql<FileRow[]>`select ${fileSelect(sql)} from files f ${fileJoin(sql)} where f.owner_id = ${u.id} and f.trashed_at is null ${match(sql, 'f')} ${dates(sql, 'f')}
-        ${exts ? sql`and lower(substring(f.name from '\\.([^.]+)$')) = any(${exts})` : sql``}
-        ${q.tag ? sql`and exists (select 1 from file_tags ft join tags tg on tg.id = ft.tag_id where ft.file_id = f.id and tg.id = ${q.tag} and tg.owner_id = ${u.id})` : sql``}
-        ${q.starred ? sql`and f.starred_at is not null` : sql``} ${q.minSize !== undefined ? sql`and f.size >= ${q.minSize}` : sql``} ${q.maxSize !== undefined ? sql`and f.size <= ${q.maxSize}` : sql``}
+      q.kind === 'folder' || !byName ? [] : sql<Hit[]>`select ${fileSelect(sql)} from files f ${fileJoin(sql)} where f.owner_id = ${u.id} and f.trashed_at is null ${match(sql, 'f')} ${filters(sql)}
         order by ${order(sql, q, 'f', true)} limit 500`,
+      q.kind === 'folder' || !byContent ? [] : sql<Hit[]>`with q as (select ${tsQuery(sql, q.q)} as query)
+        select ${fileSelect(sql)}, hit.page as match_page, hit.snippet as match_snippet from q, files f ${fileJoin(sql)}
+          join lateral (select p.page, ${snippet(sql, sql`p.text`, sql`q.query`)} as snippet from object_passages p where p.object_id = o.id and p.tsv @@ q.query order by ts_rank_cd(p.tsv, q.query) desc, p.seq limit 1) hit on true
+        where f.owner_id = ${u.id} and f.trashed_at is null and numnode(q.query) > 0 ${filters(sql)} order by ${order(sql, q, 'f', true)} limit 500`,
     ]);
-    return { folders: folders.map(folderJson), files: files.map(fileJson) };
+    if (!q.q) return { folders: folders.map(folderJson), files: named.map(fileJson) };
+    const merged = new Map<string, { row: Hit; name: boolean; text?: Hit }>();
+    for (const f of named) merged.set(f.id, { row: f, name: true });
+    for (const f of inText) { const e = merged.get(f.id); if (e) e.text = f; else merged.set(f.id, { row: f, name: false, text: f }); }
+    const key = (f: FileRow): string | number => (q.sort === 'size' ? Number(f.size) : q.sort === 'updated' ? f.updated_at.getTime() : q.sort === 'created' ? f.created_at.getTime() : f.name_key);
+    const sign = q.dir === 'desc' ? -1 : 1;
+    const files = [...merged.values()].sort((a, b) => { const x = key(a.row), y = key(b.row); return (x < y ? -1 : x > y ? 1 : a.row.id < b.row.id ? -1 : 1) * sign; }).slice(0, 500);
+    return {
+      folders: folders.map((d) => ({ ...folderJson(d), match: { where: 'name' as const } })),
+      files: files.map((e) => ({ ...fileJson(e.row), match: { where: e.name && e.text ? 'both' as const : e.text ? 'content' as const : 'name' as const,
+        ...(e.text ? { snippet: tidySnippet(e.text.match_snippet), page: e.text.match_page ?? null } : {}) } })),
+    };
   });
-  /** Groups of live files with identical content, within this account only. */
-  app.get('/api/v1/duplicates', authed, async (req) => {
-    const u = userOf(req);
-    const files = await sql<FileRow[]>`select ${fileSelect(sql)} from files f ${fileJoin(sql)} where f.owner_id = ${u.id} and f.trashed_at is null and f.size > 0
-      and (f.sha256, f.size) in (select sha256, size from files where owner_id = ${u.id} and trashed_at is null and size > 0 group by sha256, size having count(*) > 1)
-      order by f.size desc, f.sha256, f.created_at limit 2000`;
-    const groups = new Map<string, ReturnType<typeof fileJson>[]>();
-    for (const f of files) { const k = `${f.sha256}:${f.size}`; groups.set(k, [...(groups.get(k) ?? []), fileJson(f)]); }
-    return { groups: [...groups.values()].map((g) => ({ sha256: g[0]!.sha256, size: g[0]!.size, files: g })) };
-  });
+  /** Duplicates within this account: `mode=exact` (identical content) or `mode=similar-images` (perceptual hash). Never deletes anything. */
+  app.get('/api/v1/duplicates', authed, async (req) => duplicates(userOf(req).id, req.query));
 
   // --- tags ---
   app.get('/api/v1/tags', authed, async (req) =>

@@ -97,6 +97,24 @@ const commands: Record<string, () => Promise<void>> = {
     copyFileSync(config.masterKeyFile, `${config.masterKeyFile}.previous`); renameSync(nextFile, config.masterKeyFile);
     console.log(`${n} keys re-wrapped. New key: ${config.masterKeyFile} (previous kept as .previous). Restart sp-drive and sp-drive-worker, back up the new key, sessions for open share links are reset.`);
   },
+  /**
+   * Queue the text extraction of every stored object that has none yet (after the 2.0 upgrade, or after turning
+   * SPD_INDEX_CONTENT back on). --all: every object again; --failed: also the ones that failed. The worker does the work.
+   */
+  async reindex() {
+    const { reindex } = await import('./textindex.ts');
+    const { rehashImages } = await import('./worker.ts');
+    if (!config.indexContent) { console.error('content indexing is off (SPD_INDEX_CONTENT=off): nothing queued'); process.exitCode = 1; return; }
+    const n = await reindex({ all: args.includes('--all'), failed: args.includes('--failed') });
+    const h = await rehashImages();
+    console.log(`${n} objects queued for text extraction, ${h} images queued for hashing; the worker processes them in the background (GET /api/v1/index/status)`);
+  },
+  /** Remove every extracted text and passage (after turning SPD_INDEX_CONTENT off). Files are untouched. Requires --yes. */
+  async 'purge-index'() {
+    if (!args.includes('--yes')) { console.error('refused: this deletes the content index (not the files); add --yes'); process.exitCode = 2; return; }
+    const p = await sql`delete from object_passages`; const t = await sql`delete from object_text`;
+    console.log(`content index removed: ${p.count} passages, ${t.count} objects`);
+  },
   /** Check that every object's blob exists and decrypts (first block). --deep reads everything and re-hashes. */
   async verify() {
     const { readSealed } = await import('./blob.ts');

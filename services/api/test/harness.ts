@@ -91,3 +91,48 @@ export async function signup(o: { role?: 'admin' | 'user'; quotaBytes?: number }
   const root = await client.get('/api/v1/folders/root');
   return { client, email, userId: state.body.user.id, recoveryCodes: ver.body.recoveryCodes, rootId: root.body.folder.id };
 }
+
+/** A native client: bearer token, no cookie, no CSRF header, no Origin. */
+export class Device {
+  constructor(public token: string, public clientHeader?: string) {}
+  async call(method: string, url: string, body?: unknown, headers: Record<string, string> = {}): Promise<Res> {
+    const a = await server();
+    const raw = Buffer.isBuffer(body);
+    const res = await a.inject({ method: method as 'GET', url, remoteAddress: '10.9.0.1',
+      headers: { authorization: `Bearer ${this.token}`, ...(this.clientHeader ? { 'x-spd-client': this.clientHeader } : {}), ...(raw ? { 'content-type': 'application/octet-stream' } : body !== undefined ? { 'content-type': 'application/json' } : {}), ...headers },
+      payload: raw ? (body as Buffer) : body !== undefined ? JSON.stringify(body) : undefined });
+    let parsed: any; try { parsed = res.json(); } catch { /* not json */ }
+    return { status: res.statusCode, body: parsed, headers: res.headers, raw: res.rawPayload };
+  }
+  get = (url: string) => this.call('GET', url);
+  post = (url: string, body: unknown = {}) => this.call('POST', url, body);
+}
+/** Sign in as a native client with the account's passkey; `clientHeader` is sent as X-SPD-Client. */
+export async function nativeLogin(client: Client, name = 'Mac de test', clientHeader?: string): Promise<Device> {
+  const fresh = new Client(client.auth);
+  const o = await fresh.post('/api/v1/auth/login/options');
+  const res = await fresh.post('/api/v1/auth/login/verify', { challengeId: o.body.challengeId, response: client.auth!.get(o.body.options), client: { kind: 'native', name } }, clientHeader ? { 'x-spd-client': clientHeader } : {});
+  if (res.status !== 200) throw new Error(`native login: ${JSON.stringify(res.body)}`);
+  return new Device(res.body.token, clientHeader);
+}
+/** Events of a Server-Sent Events body ("event: x\ndata: {...}\n\n" blocks; comments are kept as { event: ':' }). */
+export function parseSse(text: string): { event: string; data: any }[] {
+  return text.split('\n\n').filter((b) => b.trim()).map((block) => {
+    if (block.startsWith(':')) return { event: ':', data: block.slice(1).trim() };
+    const event = /^event: (.*)$/m.exec(block)?.[1] ?? 'message', data = /^data: (.*)$/m.exec(block)?.[1];
+    return { event, data: data === undefined ? undefined : JSON.parse(data) };
+  });
+}
+/** A minimal one-page PDF with a real text layer (Helvetica, WinAnsi). */
+export function pdfWithText(lines: string[], size = 14): Buffer {
+  const esc = (l: string) => l.replace(/[()\\]/g, '\\$&');
+  const content = `BT /F1 ${size} Tf 50 ${760 - size} Td ${Math.round(size * 1.4)} TL ${lines.map((l) => `(${esc(l)}) Tj T*`).join(' ')} ET`;
+  const objs = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${Buffer.byteLength(content, 'latin1')} >>\nstream\n${content}\nendstream`, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>'];
+  let out = '%PDF-1.4\n'; const offsets: number[] = [];
+  objs.forEach((o, i) => { offsets.push(Buffer.byteLength(out, 'latin1')); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+  const xref = Buffer.byteLength(out, 'latin1');
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, 'latin1');
+}

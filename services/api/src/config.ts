@@ -39,6 +39,30 @@ export const config = {
   inlineWorker: process.env.SPD_INLINE_WORKER === 'on',
   commit: process.env.SPD_COMMIT ?? '',
   /** Apple application identifiers (TEAMID.bundle.id) allowed to use this site's passkeys: served in the apple-app-site-association file */
+  /** API contract level and product version announced by GET /api/v1/meta */
+  version: '2.0.0',
+  /** content index (extracted text in PostgreSQL): on unless SPD_INDEX_CONTENT=off */
+  indexContent: process.env.SPD_INDEX_CONTENT !== 'off',
+  /** OCR of images and of PDF pages without a text layer (Apple Vision, local): on unless SPD_OCR=off */
+  ocr: process.env.SPD_OCR !== 'off',
+  /** semantic search (local sentence vectors): 'auto' = on when the helper's model answers its probe */
+  semantic: (process.env.SPD_SEMANTIC ?? 'auto') as 'auto' | 'off',
+  /** the local text helper (scripts/textkit-build.sh); absent = no PDF text, no OCR, no perceptual hash */
+  textkit: process.env.SPD_TEXTKIT ?? join(process.env.SPD_APP_DIR ?? process.cwd(), 'dist/spd-textkit'),
+  /** content index limits */
+  textMaxBytes: num('SPD_TEXT_MAX_MB', 20) * MIB,
+  extractMaxBytes: num('SPD_EXTRACT_MAX_MB', 300) * MIB,
+  extractMaxPages: num('SPD_EXTRACT_MAX_PAGES', 500),
+  ocrMaxPages: num('SPD_OCR_MAX_PAGES', 60),
+  extractMaxChars: num('SPD_EXTRACT_MAX_CHARS', 2_000_000),
+  extractTimeoutMs: num('SPD_EXTRACT_TIMEOUT_S', 240) * 1000,
+  /** document intelligence: external providers stay off unless SPD_AI_EXTERNAL=on (and the account agrees) */
+  aiExternal: process.env.SPD_AI_EXTERNAL === 'on',
+  aiEnvFile: process.env.SPD_AI_ENV_FILE ?? join(homedir(), '.config/sp-drive/ai.env'),
+  /** where scripts/backup.sh writes its status files (read by the administration view) */
+  backupDir: process.env.SPD_BACKUP_DIR ?? join(homedir(), 'backups/sp-drive'),
+  /** seconds between two ": ping" comments on the events stream */
+  eventsPingMs: num('SPD_EVENTS_PING_S', 25) * 1000,
   appleAppIds: (process.env.SPD_APPLE_APP_IDS ?? '').split(',').map((x) => x.trim()).filter((x) => /^[A-Z0-9]{10}\.[A-Za-z0-9.-]{1,155}$/.test(x)),
 };
 export const secureCookies = config.origin.startsWith('https://');
