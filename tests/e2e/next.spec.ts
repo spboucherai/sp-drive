@@ -3,6 +3,8 @@
 // and — when the stack was started with SPD_DEV_AI=fake — the AI screens against the fake endpoint (not a real model).
 import { expect, type Page, test } from '@playwright/test';
 import { apiSignUp } from './helpers.ts';
+// @ts-expect-error a plain module without types
+import { makePdf } from './fixtures/pdf-gen.mjs';
 import { call, fixture, indexed, secondAccount, upload } from './next-helpers.ts';
 
 test.use({ locale: 'fr-CA' });
@@ -384,4 +386,45 @@ test('AI against the fake endpoint: streamed answer with citations that open the
   await expect(row(page, 'Classé – Contrat chalet.md')).toBeVisible();
   expect(await call(page, 'GET', '/tags')).toHaveLength(0); // the ignored proposal changed nothing
   void info;
+});
+
+test('a large folder renders in steps; the keyboard still reaches its last row', async ({ page, context }, info) => {
+  test.skip(info.project.name === 'mobile', 'keyboard navigation is the desktop case');
+  await start(page, context);
+  const root = await rootId(page);
+  const folder = (await call(page, 'POST', '/folders', { parentId: root, name: 'Beaucoup' })).id as string;
+  const ids: string[] = [];
+  for (let i = 0; i < 30; i++) ids.push((await upload(page, folder, `f${String(i).padStart(2, '0')}.txt`, `n${i}`)).id);
+  for (let k = 0; k < 9; k++) await call(page, 'POST', '/copy', { fileIds: ids, folderIds: [], destinationId: folder });
+  await page.evaluate(() => localStorage.setItem('spd.explorer.view', 'list'));
+  await page.goto(`/folder/${folder}`);
+  const rows = page.locator('[data-testid=listing] [role=row][data-id]');
+  await expect(rows).toHaveCount(240);
+  await expect(page.getByTestId('listing')).toHaveAttribute('aria-rowcount', '300');
+  await rows.first().focus();
+  await page.keyboard.press('End');
+  await expect(rows).toHaveCount(300);
+  await expect(rows.last()).toBeFocused();
+});
+
+test('versions of images and PDF are shown side by side, drawn from the real bytes of each version', async ({ page, context }) => {
+  await start(page, context);
+  const root = await rootId(page);
+  const img = await upload(page, root, 'photo.png', fixture('sample.png'));
+  await upload(page, root, 'photo.png', fixture('sample.jpg'), { fileId: img.id });
+  const pdf = await upload(page, root, 'rapport.pdf', fixture('sample.pdf'));
+  await upload(page, root, 'rapport.pdf', Buffer.from(makePdf([['Version deux', 'Une seule page.']])), { fileId: pdf.id });
+  await page.reload();
+  const tm = page.getByTestId('time-machine');
+  await act(page, 'photo.png', 'Historique des versions');
+  const pics = tm.getByTestId('tm-images').locator('img');
+  await expect(pics).toHaveCount(2);
+  for (const i of [0, 1]) await expect.poll(() => pics.nth(i).evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true);
+  await page.keyboard.press('Escape');
+  await act(page, 'rapport.pdf', 'Historique des versions');
+  await expect(tm.getByTestId('tm-pdf').getByTestId('tm-pdf-canvas')).toHaveCount(2);
+  await expect(tm.getByTestId('tm-pdf').locator('canvas:visible')).toHaveCount(2, { timeout: 30_000 });
+  await expect(tm.getByTestId('tm-pdf')).toContainText('Page 1 sur 3'); // the older version has three pages, the newer one
+  await tm.getByRole('button', { name: 'Page suivante' }).click();
+  await expect(tm.getByTestId('tm-pdf')).toContainText('Cette version n’a pas de page 2');
 });

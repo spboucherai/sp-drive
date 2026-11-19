@@ -20,8 +20,9 @@ pnpm install
 pnpm typecheck          # shared, api, web, service worker
 pnpm test               # vitest: real PostgreSQL (sp_drive_test), real clamd when ~/.cache/sp-drive-clamav has signatures
 pnpm build              # dist/api.mjs, worker.mjs, cli.mjs, sheet-child.mjs, dist/web
-scripts/dev-stack.sh    # API :8661 + web http://localhost:5183 ; scripts/dev-invite.sh <email> [--admin]
-pnpm e2e                # Playwright against the dev stack
+scripts/dev-stack.sh    # API :8661 + web http://localhost:5183 (--stop ; SPD_DEV_AI=fake adds scripts/fake-llm.mjs) ; scripts/dev-invite.sh <email> [--admin]
+pnpm e2e                # Playwright against the dev stack (start it with SPD_DEV_AI=fake for the AI specs and the visual references;
+                        #   on the node: --output /tmp/<dir> per run; SPD_SHOTS=1 pnpm e2e shots.spec.ts writes docs/next/shots/web)
 scripts/ci.sh           # on the node: textkit build + typecheck + vitest + build, with a summary and an exit code
 scripts/next-dev.sh     # 2.0 shared dev API on the node (:8667): start | stop | seed | token alice | invite <email>
 ```

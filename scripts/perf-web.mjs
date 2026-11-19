@@ -40,20 +40,19 @@ await page.waitForTimeout(61_000); // the seeding spent most of the per-address 
 const count = await page.evaluate(async (id) => (await (await fetch(`/api/v1/folders/${id}`)).json()).files.length, big);
 
 async function load(path, mode, runs) {
-  const t = { firstRow: [], settled: [], nodes: [], rows: [], heapMb: [], longTaskMs: [], select: [] };
+  const t = { firstRow: [], settled: [], nodes: [], rows: [], longTaskMs: [], select: [] };
   for (let i = 0; i < runs; i++) {
     await page.goto('/pwa/favicon.svg');
     await page.evaluate((m) => localStorage.setItem('spd.explorer.view', m), mode);
-    await page.addInitScript(() => { window.__lt = 0; try { new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__lt += e.duration; }).observe({ type: 'longtask', buffered: true }); } catch { /* unsupported */ } });
+    await page.addInitScript(() => { window.__first = 0; const look = () => { if (!window.__first && document.querySelector('[data-testid=listing] [role=row][data-id]')) { window.__first = performance.now(); mo.disconnect(); } }; const mo = new MutationObserver(look); mo.observe(document, { childList: true, subtree: true }); window.__lt = 0; try { new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__lt += e.duration; }).observe({ type: 'longtask', buffered: true }); } catch { /* unsupported */ } });
     await page.goto(path, { waitUntil: 'commit' });
     await page.waitForSelector('[data-testid=listing] [role=row][data-id]');
-    t.firstRow.push(await page.evaluate(() => performance.now()));
+    t.firstRow.push(await page.evaluate(() => window.__first));
     await page.waitForLoadState('networkidle');
     await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     t.settled.push(await page.evaluate(() => performance.now()));
     t.nodes.push(await page.evaluate(() => document.querySelectorAll('*').length));
     t.rows.push(await page.evaluate(() => document.querySelectorAll('[data-testid=listing] [role=row][data-id]').length));
-    t.heapMb.push(await page.evaluate(() => Math.round((performance.memory?.usedJSHeapSize ?? 0) / 1048576)));
     t.longTaskMs.push(await page.evaluate(() => Math.round(window.__lt)));
     // interaction: select the first row, until the frame that shows it selected
     t.select.push(await page.evaluate(() => new Promise((resolve) => {

@@ -134,9 +134,9 @@ function PdfPair({ fileId, a, b }: { fileId: string; a: VersionInfo; b: VersionI
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="tm-pdf">
       <div className="flex shrink-0 items-center justify-center gap-2 border-b border-line px-3 py-1.5 text-xs text-ink-2">
-        <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label={t('preview.previous')} className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-hover disabled:opacity-40"><Glyph name="chevronLeft" size={16} /></button>
+        <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label={t('next.tm.prevPage')} className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-hover disabled:opacity-40"><Glyph name="chevronLeft" size={16} /></button>
         <span className="tabular-nums">{t('next.tm.pageOf', { n: page, total: max })}</span>
-        <button type="button" disabled={page >= max} onClick={() => setPage(page + 1)} aria-label={t('preview.next')} className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-hover disabled:opacity-40"><Glyph name="chevronRight" size={16} /></button>
+        <button type="button" disabled={page >= max} onClick={() => setPage(page + 1)} aria-label={t('next.tm.nextPage')} className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-hover disabled:opacity-40"><Glyph name="chevronRight" size={16} /></button>
       </div>
       <div className="flex min-h-0 flex-1 max-sm:flex-col sm:divide-x sm:divide-line">
         {[a, b].map((v) => <Pane key={v.id} v={v}><PdfPage url={contentUrl(fileId, v.id)} page={page} onPages={(n) => setPages((p) => (p[v.id] === n ? p : { ...p, [v.id]: n }))} /></Pane>)}
