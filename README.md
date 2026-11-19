@@ -1,13 +1,22 @@
 <div align="center">
 
+<img src="docs/brand/logo.svg" alt="SP Drive logo" width="560">
+
+<br><br>
+
+<img src="docs/brand/icon.png" alt="SP Drive icon" width="112" height="112">
+
 # 🗄️ SP Drive
 
 **Stockage documentaire privé auto-hébergé — explorateur de fichiers chiffrés, aperçus, liens de partage et portails de dépôt, avec connexion par passkey uniquement.**
+
+**Auteur : [Simon-Pierre Boucher](https://www.spboucher.ai)**
 
 [![drive.spboucher.ai](https://img.shields.io/website?url=https%3A%2F%2Fdrive.spboucher.ai&label=drive.spboucher.ai&style=for-the-badge&up_message=en%20ligne&down_message=hors%20ligne)](https://drive.spboucher.ai)
 ![version](https://img.shields.io/badge/version-1.0.0-blue?style=for-the-badge)
 ![chiffrement](https://img.shields.io/badge/chiffrement-AES--256--GCM%20par%20objet-8A2BE2?style=for-the-badge)
 ![licence](https://img.shields.io/badge/licence-tous%20droits%20r%C3%A9serv%C3%A9s-lightgrey?style=for-the-badge)
+![author](https://img.shields.io/badge/author-Simon--Pierre%20Boucher-0A66C2?style=for-the-badge)
 
 ![TypeScript](https://img.shields.io/badge/TypeScript-7.0.2-3178C6?style=flat-square&logo=typescript&logoColor=white)
 ![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A5%2024-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)
@@ -670,6 +679,13 @@ seul nœud, journaux d'accès de la passerelle hors du dépôt, fichiers de plus
 
 ## 👤 Auteur et licence
 
-**Simon-Pierre Boucher** — [contact@spboucher.ai](mailto:contact@spboucher.ai) · forge : [git.spboucher.ai](https://git.spboucher.ai)
+<div align="center">
+
+<img src="docs/brand/icon.png" width="64" height="64" alt="">
+
+**Simon-Pierre Boucher** — conception, développement, exploitation<br>
+[www.spboucher.ai](https://www.spboucher.ai) · [git.spboucher.ai](https://git.spboucher.ai) · contact@spboucher.ai
+
+</div>
 
 Tous droits réservés.
