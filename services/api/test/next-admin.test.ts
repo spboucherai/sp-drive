@@ -25,6 +25,7 @@ describe('administration view', () => {
     expect(s.features).toContain('events');
     // a worker publishes what it can do
     await heartbeat();
+    const [waiting] = await sql<{ n: number }[]>`select count(*)::int as n from jobs where kind = 'scan_object' and status = 'queued'`; // other suites may have left some
     await admin.client.upload(admin.rootId, 'cassé.pdf', Buffer.from('%PDF-1.4 not a pdf'));
     await admin.client.upload(admin.rootId, 'bon.txt', Buffer.from('bonjour'));
     await sql`insert into jobs (kind, payload, status, attempts, last_error, finished_at) values ('preview', '{}', 'failed', 3, 'boom', now())`;
@@ -35,7 +36,7 @@ describe('administration view', () => {
     expect(s.antivirusSignatures).toMatchObject({ engine: expect.stringMatching(/^\d+\.\d+/), signatures: expect.any(Number), signaturesAt: expect.any(String), ageS: expect.any(Number) });
     expect(s.jobs).toContainEqual({ kind: 'preview', status: 'failed', count: expect.any(Number), oldestAgeS: null });
     const queued = s.jobs.find((j: any) => j.kind === 'scan_object' && j.status === 'queued');
-    expect(queued).toMatchObject({ count: 2 }); expect(queued.oldestAgeS).toBeGreaterThanOrEqual(0);
+    expect(queued).toMatchObject({ count: waiting!.n + 2 }); expect(queued.oldestAgeS).toBeGreaterThanOrEqual(0);
     await work();
     s = (await admin.client.get('/api/v1/admin/system')).body;
     expect(s.jobs.find((j: any) => j.status === 'queued')).toBeUndefined();
