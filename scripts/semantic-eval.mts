@@ -33,4 +33,15 @@ for (const model of ['contextual', 'sentence']) {
   console.log(`\nbackend: ${model} (dim ${P.find((p) => p.vector)?.vector?.length ?? 0}, passages without a vector: ${P.filter((p) => !p.vector).length}/${P.length})`);
   for (const [k, f] of Object.entries(fam)) console.log(`  ${k.padEnd(28)} n=${String(f.n).padStart(2)}  recall@1 ${(f.r1 / f.n).toFixed(2)}  recall@3 ${(f.r3 / f.n).toFixed(2)}  MRR ${(f.mrr / f.n).toFixed(2)}`);
 }
+// How sure is the best hit? Absolute cosines of this model sit in a narrow high band, so the useful signal is how far the
+// best passage stands above the others for that query (z-score). Off-topic questions should not stand out.
+{
+  const P = embed('contextual', fx.passages.map((p) => ({ text: p.text, lang: p.lang })));
+  const z = (q: string) => { const [qv] = embed('contextual', [{ text: q }]); const s = P.map((p) => cos(qv!.vector!, p.vector!)); const m = s.reduce((a, b) => a + b, 0) / s.length; const sd = Math.sqrt(s.reduce((a, b) => a + (b - m) ** 2, 0) / s.length); const top = Math.max(...s); return { top, z: (top - m) / sd, best: fx.passages[s.indexOf(top)]!.id }; };
+  const on = fx.queries.map((q) => ({ ...z(q.q), ok: z(q.q).best === q.answer }));
+  const off = ['quelle est la capitale de la Mongolie', 'who won the hockey game last night', 'paroles de chanson sur la pluie', 'how to train a dragon', 'prix du bitcoin aujourd\'hui', 'best pizza topping'].map((q) => z(q));
+  const stat = (xs: number[]) => `min ${Math.min(...xs).toFixed(2)}  median ${[...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]!.toFixed(2)}  max ${Math.max(...xs).toFixed(2)}`;
+  console.log(`\ncontextual, best-hit cosine      on-topic: ${stat(on.map((x) => x.top))}   off-topic: ${stat(off.map((x) => x.top))}`);
+  console.log(`contextual, best-hit z-score     right answer on top: ${stat(on.filter((x) => x.ok).map((x) => x.z))}   wrong on top: ${stat(on.filter((x) => !x.ok).map((x) => x.z))}   off-topic: ${stat(off.map((x) => x.z))}`);
+}
 console.log(`\nchance: recall@1 ${(1 / fx.passages.length).toFixed(2)}, recall@3 ${(3 / fx.passages.length).toFixed(2)}`);

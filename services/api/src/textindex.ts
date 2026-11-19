@@ -246,6 +246,13 @@ export async function lexicalPassages(ownerId: string, question: string, scope: 
     where ${scopeSql(sql, ownerId, scope)} and numnode(q.query) > 0 and p.tsv @@ q.query order by score desc, f.id, p.seq limit ${limit}`.catch((e: { code?: string }) => { if (e.code === '42601' || e.code === '22023') return []; throw e; });
   return rows as ScoredPassage[];
 }
+/** The opening passages of given files (a question such as "summarise this" shares no word with the text). */
+export async function leadPassages(ownerId: string, fileIds: string[], perFile: number, limit: number): Promise<ScoredPassage[]> {
+  const rows = await sql<ScoredPassage[]>`select f.id as "fileId", f.name, p.object_id as "objectId", p.seq, p.page, p.text, 0::float8 as score
+    from files f join file_versions v on v.id = f.current_version_id join object_passages p on p.object_id = v.object_id
+    where f.owner_id = ${ownerId} and f.trashed_at is null and f.id = any(${fileIds}) and p.seq < ${perFile} order by p.seq, f.id limit ${limit}`;
+  return rows;
+}
 const vectorCache = new Map<string, { sig: string; at: number; rows: { fileId: string; name: string; objectId: string; seq: number; page: number | null; v: Float32Array }[] }>();
 const SEMANTIC_MAX_PASSAGES = 60000;
 /** Passages nearest to a query vector (cosine; vectors are unit length). Scored in this process: fine up to tens of thousands. */
@@ -275,7 +282,8 @@ export async function semanticPassages(ownerId: string, query: number[], scope: 
   scored.sort((a, b) => b.score - a.score);
   const top = scored.slice(0, limit);
   if (!top.length) return [];
-  const texts = await sql<{ object_id: string; seq: number; text: string }[]>`select object_id, seq, text from object_passages where (object_id, seq) in ${sql(top.map((x) => [c!.rows[x.i]!.objectId, c!.rows[x.i]!.seq] as never))}`;
+  const texts = await sql<{ object_id: string; seq: number; text: string }[]>`select object_id, seq, text from object_passages
+    where object_id = any(${[...new Set(top.map((x) => c!.rows[x.i]!.objectId))]}) and seq = any(${[...new Set(top.map((x) => c!.rows[x.i]!.seq))]})`;
   const byKey = new Map(texts.map((x) => [`${x.object_id}:${x.seq}`, x.text]));
   return top.map((x) => { const r = c!.rows[x.i]!; return { fileId: r.fileId, name: r.name, objectId: r.objectId, seq: r.seq, page: r.page, text: byKey.get(`${r.objectId}:${r.seq}`) ?? '', score: Math.round(x.score * 10000) / 10000 }; }).filter((x) => x.text);
 }

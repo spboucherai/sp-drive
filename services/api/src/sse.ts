@@ -12,7 +12,7 @@ export function openSse(req: FastifyRequest, reply: FastifyReply): SseStream {
     'X-Accel-Buffering': 'no', // nginx-style proxies; Caddy streams as soon as it sees text/event-stream and flushed chunks
   });
   res.flushHeaders();
-  req.raw.socket.setNoDelay(true);
+  (req.raw.socket as { setNoDelay?: (on: boolean) => void } | undefined)?.setNoDelay?.(true);
   let closed = false;
   const closers: (() => void)[] = [];
   const close = () => { if (closed) return; closed = true; for (const fn of closers.splice(0)) { try { fn(); } catch { /* clean-up must not throw */ } } };

@@ -25,8 +25,9 @@ const Condition = z.discriminatedUnion('field', [
   z.object({ field: z.literal('tag'), op: z.enum(['is', 'isNot']), value: Id }),
   z.object({ field: z.literal('untagged'), op: z.literal('is'), value: z.boolean() }),
   z.object({ field: z.literal('size'), op: z.enum(['gt', 'lt']), value: z.number().int().min(0).max(1e15) }),
-  z.object({ field: z.enum(['modified', 'created']), op: z.enum(['gt', 'lt']), value: DateStr }),
-  z.object({ field: z.enum(['modified', 'created']), op: z.literal('within'), value: z.number().int().min(1).max(36500) }), // days
+  // gt / lt take a date, within takes a number of days
+  ...(['modified', 'created'] as const).map((f) => z.object({ field: z.literal(f), op: z.enum(['gt', 'lt', 'within']), value: z.union([DateStr, z.number().int().min(1).max(36500)]) })
+    .refine((c) => (c.op === 'within') === (typeof c.value === 'number'), 'gt and lt take a date, within takes a number of days')),
   z.object({ field: z.literal('starred'), op: z.literal('is'), value: z.boolean() }),
   z.object({ field: z.literal('shared'), op: z.literal('is'), value: z.boolean() }),
   z.object({ field: z.literal('folder'), op: z.enum(['is', 'isNot']), value: Id }),

@@ -8,7 +8,7 @@ import { actorOf, requireUser, userOf } from '../auth.ts';
 import { config, UserError } from '../config.ts';
 import { audit, sql } from '../db.ts';
 import { openSse } from '../sse.ts';
-import { embedQuery, lexicalPassages, type ScoredPassage, semanticPassages, subtreeFolderIds } from '../textindex.ts';
+import { embedQuery, leadPassages, lexicalPassages, type ScoredPassage, semanticPassages, subtreeFolderIds } from '../textindex.ts';
 import { getFile, getFolder } from '../tree.ts';
 import { AiError, type ChatMessage, type Provider, providers } from './providers.ts';
 
@@ -39,13 +39,20 @@ async function choose(req: FastifyRequest, want: { provider?: string; model?: st
   return { provider: p, model };
 }
 
-/** Lexical and (when available) semantic retrieval merged by reciprocal rank; the same passage found twice ranks higher. */
+/**
+ * Retrieval. Words decide whether anything was found at all: the local sentence model ranks well but its scores do not
+ * separate "related" from "unrelated" (measured in scripts/semantic-eval.mts), so it only re-ranks and completes a
+ * lexical result, by reciprocal rank. A question about explicitly chosen files that matches no word ("summarise
+ * this") falls back to the opening passages of those files. Nothing found → no model call.
+ */
 async function retrieve(ownerId: string, question: string, scope: { fileIds?: string[]; folderIds?: string[] }): Promise<ScoredPassage[]> {
+  const lex = await lexicalPassages(ownerId, question, scope, 16);
+  if (!lex.length) return scope.fileIds ? leadPassages(ownerId, scope.fileIds, Math.max(1, Math.floor(SOURCES / scope.fileIds.length)), SOURCES) : [];
   const vector = await embedQuery(question);
-  const [lex, sem] = await Promise.all([lexicalPassages(ownerId, question, scope, 16), vector ? semanticPassages(ownerId, vector, scope, 16) : Promise.resolve([] as ScoredPassage[])]);
+  const sem = vector ? await semanticPassages(ownerId, vector, scope, 16) : [];
   const fused = new Map<string, { p: ScoredPassage; score: number }>();
   const add = (list: ScoredPassage[], weight: number) => list.forEach((p, i) => { const k = `${p.objectId}:${p.seq}:${p.fileId}`; const e = fused.get(k) ?? { p, score: 0 }; e.score += weight / (20 + i); fused.set(k, e); });
-  add(lex, 1.2); add(sem.filter((s) => s.score >= 0.35), 1);
+  add(lex, 1.2); add(sem, 1);
   return [...fused.values()].sort((a, b) => b.score - a.score).slice(0, SOURCES).map((x) => x.p);
 }
 

@@ -10,7 +10,7 @@ import { SoftAuthenticator } from './authenticator.ts';
 
 let app: FastifyInstance | undefined;
 export async function server(): Promise<FastifyInstance> {
-  if (!app) { await migrate(); app = await buildServer({ logger: false }); await app.ready(); }
+  if (!app) { await migrate(); app = await buildServer({ logger: false }); if (process.env.SPD_TEST_ERRORS) app.addHook('onError', async (req, _reply, err) => { if (!(err as { status?: number }).status && err.name !== 'ZodError' && !(err as { statusCode?: number }).statusCode) console.error('UNHANDLED', req.method, req.url, err); }); await app.ready(); }
   return app;
 }
 export async function closeAll(): Promise<void> { await app?.close(); app = undefined; await sql.end({ timeout: 5 }); }
