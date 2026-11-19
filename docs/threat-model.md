@@ -62,3 +62,32 @@ de la passerelle TLS ; le poste du propriétaire.
 - **Journaux d'accès de la passerelle** (Caddy sur BHS64) : hors de ce dépôt ; s'ils sont activés, ils contiennent les
   URL publiques avec jeton. À vérifier côté passerelle.
 - **Fichiers > 4 000 Mo** du propriétaire : non analysés par l'antivirus (marqués comme tels).
+
+## 2.0 — surfaces ajoutées
+
+- **Texte extrait en clair dans PostgreSQL** (`object_passages`, vecteurs compris) : les objets restent scellés, mais
+  une copie de la base révèle désormais le texte des documents indexés. Compromis assumé pour la recherche ; le dump de
+  sauvegarde est scellé avec la clé maîtresse ; interrupteur `SPD_INDEX_CONTENT=off` + `cli purge-index`. Seuls les
+  contenus déclarés sains par l'antivirus sont indexés ; un contenu déclaré infecté perd son index.
+- **Assistant local `spd-textkit`** (PDFKit, Vision, NaturalLanguage) : exécuté dans le même profil `sandbox-exec`
+  que les autres convertisseurs (pas de réseau, pas d'accès au dossier personnel ni aux données), avec deux exceptions
+  réservées à ce binaire : lecture-écriture de `~/Library/Caches/spd-textkit` (cache de modèles compilés par macOS, nommé
+  d'après le processus) et lecture de `~/Library/Daemon Containers/*/Data/CompiledModels/`. Sans elles Vision échoue.
+  Ces chemins ne contiennent aucune donnée d'utilisateur. Test : l'assistant ne peut lire ni la clé, ni les objets, ni
+  `~/Documents`, et n'a pas de réseau.
+- **Partage privé** : deux familles de routes. Les routes du propriétaire restent filtrées par `owner_id` (un membre y
+  obtient 404 partout). Les routes `/shared/:grantId/…` revérifient à chaque appel : accord actif, appelant = bénéficiaire,
+  cible dans le sous-arbre accordé, rien dans la corbeille ; rôle insuffisant → 403, tout le reste → 404. Octets
+  imputés au quota du propriétaire, même chaîne antivirus ; un membre ne sort jamais un fichier infecté. Les
+  téléversements d'un accord sont invisibles aux routes `/uploads` ordinaires. `collab/resolve` : adresse exacte,
+  10 appels par minute.
+- **IA** : l'invite ne contient que des passages retrouvés dans les fichiers de l'appelant ; consigne de traiter les
+  passages comme des données (injection par document) ; les fournisseurs externes exigent l'interrupteur du serveur
+  et celui du compte (journalisé) ; les réponses d'erreur d'un fournisseur ne sont jamais recopiées (elles peuvent
+  répéter l'invite) ; la question n'est jamais journalisée. Les suggestions sont revalidées (extension inchangée,
+  dossier appartenant au compte) et jamais appliquées par le serveur.
+- **Collections** : une règle est une donnée ; champs et opérateurs viennent d'une liste blanche, les valeurs
+  voyagent uniquement en paramètres liés ; testé contre des tentatives d'injection.
+- **Événements SSE** : aucun contenu dans les événements (un numéro de révision, un type de notification) ; 16 flux
+  au plus par compte ; un flux est fermé quand sa session est révoquée.
+- **Piste d'audit** : les renommages y consignent l'ancien nom, les opérations groupées les identifiants (200 au plus).

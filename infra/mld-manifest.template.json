@@ -134,6 +134,7 @@
   "post_sync": [
    "set -o pipefail; export PATH=\"/opt/homebrew/bin:$PATH\"; pnpm install --frozen-lockfile --silent 2>&1 | tail -2; test -d node_modules/fastify && echo '  deps ok'",
    "set -o pipefail; export PATH=\"/opt/homebrew/bin:$PATH\"; node scripts/build.mjs >/dev/null && (cd apps/web && node_modules/.bin/vite build 2>&1 | tail -1) && test -f dist/api.mjs && test -f dist/web/index.html && echo '  build ok'",
+   "export PATH=\"/opt/homebrew/bin:$PATH\"; zsh scripts/textkit-build.sh | tail -1",
    "zsh scripts/node-setup.sh"
   ],
   "post_start": []
@@ -143,7 +144,7 @@
   "gateway": "BHS64",
   "note": "DNS drive.spboucher.ai → 51.161.112.61 en place (vérifié 2026-11-11)"
  },
- "notes": "API + web (dist/), worker, clamd, freshclam, sauvegarde nocturne. Données : ~/sp-drive-data (objets chiffrés), clé maîtresse ~/.config/sp-drive/master.key (copie hors nœud obligatoire). Rebuild sur le nœud : pnpm install --frozen-lockfile && pnpm build && pm2 restart sp-drive sp-drive-worker. Voir docs/runbooks/operations.md.",
+ "notes": "API + web (dist/), worker, clamd, freshclam, sauvegarde nocturne. Données : ~/sp-drive-data (objets chiffrés), clé maîtresse ~/.config/sp-drive/master.key (copie hors nœud obligatoire). Rebuild sur le nœud : pnpm install --frozen-lockfile && pnpm build && pm2 restart sp-drive sp-drive-worker. Voir docs/runbooks/operations.md. 2.0 : dist/spd-textkit (extraction de texte, OCR, hachage perceptuel, vecteurs — local, compilé par scripts/textkit-build.sh), clés IA optionnelles dans ~/.config/sp-drive/ai.env, après la mise à niveau : node dist/cli.mjs reindex.",
  "extra_paths": [],
  "ngrok": null,
  "launchd": [],

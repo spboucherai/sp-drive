@@ -82,3 +82,38 @@ antérieurs restent chiffrés avec l'ancienne clé (`master.key.previous`) : la 
 - `mld move sp-drive` : les données et la clé ne suivent pas.
 - Supprimer `~/sp-drive-data/blobs` ou la clé maîtresse.
 - Modifier une copie de l'application ailleurs que sur le nœud.
+
+## 2.0 — ce qui change pour l'exploitation
+
+- **Après la mise à niveau** : `scripts/textkit-build.sh` (compile `dist/spd-textkit`, ~30 s, Command Line Tools
+  suffisants ; le crochet `post_sync` du manifeste le fait), puis `node dist/cli.mjs reindex` pour indexer l'existant
+  (le worker traite en arrière-plan ; suivi : `GET /api/v1/index/status` ou la vue d'administration).
+- **Index de contenu** : le texte extrait est en clair dans PostgreSQL (`object_passages`). Pour s'en passer :
+  `SPD_INDEX_CONTENT=off` sur l'API **et** le worker, puis `node dist/cli.mjs purge-index --yes`. `SPD_OCR=off` coupe
+  seulement l'OCR, `SPD_SEMANTIC=off` seulement les vecteurs.
+- **IA** : rien n'est actif sans configuration. Clés dans `~/.config/sp-drive/ai.env` (mode 600), voir
+  `docs/next/API-NEXT.md` §5.4. Les fournisseurs externes exigent `SPD_AI_EXTERNAL=on` et l'accord du compte.
+- **Sauvegardes** : `scripts/backup.sh` écrit `status.json` et `manifest.tsv` ; `scripts/backup-verify.sh` vérifie le
+  dernier dump et un échantillon d'objets (quelques secondes) ; sur une copie hors nœud :
+  `scripts/backup-verify.sh <copie> --no-key --write offnode.json --label <nœud>` puis recopier `offnode.json` dans
+  `~/backups/sp-drive/`. La vue d'administration affiche les quatre états.
+- **Événements (SSE)** : `GET /api/v1/sync/events` reste ouvert ; Caddy transmet les flux `text/event-stream` sans
+  tampon, rien à configurer. Une connexion PostgreSQL de plus par processus API (LISTEN).
+- **CI** : `scripts/ci.sh` sur le nœud (`SPD_TEST_DB` / `SPD_TEST_ROOT` pour une base de test à part).
+
+### LibreOffice bloqué sur m5ma (constat du 2026-11-19)
+
+`/Applications/LibreOffice.app/Contents/MacOS/soffice` ne démarre plus, ni dans le bac à sable, ni hors du bac à sable,
+ni depuis PM2 : le processus reste figé dans `_dyld_start` (avant sa première instruction). Journal système :
+`syspolicyd … GK process assessment … waiting on another evaluation: PST: (path: 90260b28e44ff40b), (team: 7P5S3ZLCN7)`.
+Gatekeeper a une évaluation de **premier lancement** en attente pour ce chemin (application installée par Homebrew Cask
+avec l'attribut de quarantaine `0081`, jamais approuvée à l'écran ; l'attribut a été retiré de la plupart des fichiers
+mais l'évaluation en cours ne se termine pas), et tout nouvel `exec` de ce chemin attend derrière elle. Ce n'est ni le
+profil du bac à sable ni PM2. Preuve : une copie identique à un autre chemin
+(`ditto /Applications/LibreOffice.app /Users/Shared/sp-drive-tools/LibreOffice.app`) démarre en 0,2 s et convertit dans
+le bac à sable (suite `previews.test.ts` verte avec `SPD_SOFFICE` pointé dessus).
+
+Correctif sans action à l'écran ni affaiblissement du bac à sable : ajouter au manifeste (API et worker)
+`SPD_SOFFICE=/Users/Shared/sp-drive-tools/LibreOffice.app/Contents/MacOS/soffice` (la copie existe déjà, hors du
+dossier personnel, donc lisible dans le bac à sable). Autres voies : approuver LibreOffice une fois à l'écran, ou
+redémarrer le Mac (l'évaluation en attente disparaît) après `xattr -rs -d com.apple.quarantine /Applications/LibreOffice.app`.

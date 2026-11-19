@@ -72,3 +72,43 @@ https://drive.spboucher.ai sur **m5ma** (PM2, déployé par `mld`, dépôt `sp-d
 - Journaux d'accès de la passerelle : Caddy journalise les URL, donc les jetons des liens publics y figurent.
 - CI : les suites se lancent à la main (`pnpm typecheck && pnpm test && pnpm e2e`), aucun pipeline automatique.
 - Recherche plein texte, OCR, recherche sémantique, Q&A : après stabilisation de la V1.
+
+## 2.0 « Next Generation » — branche `next` (2026-11-19, non déployée)
+
+Contrat : `docs/next/ARCHITECTURE-NEXT.md` ; formes JSON exactes et écarts : `docs/next/API-NEXT.md`. Migration `003_next`
+(additive, `down` testé). Suites : `scripts/ci.sh` (typecheck + vitest sur PostgreSQL réel, clamd réel, bac à sable réel).
+
+Fait et testé (tests d'intégration `services/api/test/next-*.test.ts`) :
+
+- `GET /meta`, en-tête `X-SPD-Client` enregistré sur les sessions d'appareil.
+- Événements de synchronisation `GET /sync/events` (SSE, `pg_notify`, regroupement, ping, fermeture à la révocation).
+- Index de contenu : job `extract_text` après analyse antivirus propre ; texte, XML bureautique (docx, pptx, xlsx, odt,
+  odp, ods), couche texte des PDF, OCR (images et pages PDF sans texte) par l'assistant local `infra/textkit`
+  (PDFKit + Vision, compilé sur le nœud, exécuté dans le bac à sable) ; `cli reindex` ; recherche `in=` + extraits ;
+  `/files/:id/text`, `/index/status`.
+- Recherche sémantique `GET /search/semantic` (modèle embarqué `NLContextualEmbedding`, vecteurs `real[]`, score en Node).
+- Couche IA `services/api/src/ai/` : `maclustr`, `anthropic` (SDK officiel), `openai`, `openrouter` ; `/ai/providers`,
+  `/ai/ask` (SSE, RAG, citations), `/ai/suggest`. **Testée contre de faux serveurs uniquement : aucun fournisseur réel
+  n'a été appelé** (aucune clé disponible).
+- Collections (règle → SQL paramétré depuis une liste blanche), activité, vue du stockage, historique des
+  téléversements, versions, doublons exacts et images similaires (dHash).
+- Partage privé et espaces de travail : `folder_grants`, routes du propriétaire, famille `/shared/:grantId/…`.
+- Administration : battement du worker, file de jobs, échecs d'aperçu, convertisseur, signatures antivirus, état des
+  sauvegardes ; `scripts/backup.sh` écrit `status.json` + `manifest.tsv`, `scripts/backup-verify.sh`,
+  `scripts/restore-test.sh` écrit `restore-test.json`.
+
+Mesure de la recherche sémantique (`pnpm exec tsx scripts/semantic-eval.mts`, 24 passages FR/EN, 28 questions
+reformulées, m5ma, 2026-11-19) :
+
+| moteur local | même langue FR | même langue EN | inter-langues | tout |
+|---|---|---|---|---|
+| `NLContextualEmbedding` (moyenne des jetons, 512 d) | rappel@1 0,67 · @3 0,75 | rappel@1 0,67 · @3 0,92 | 0,00 | rappel@1 0,57 · @3 0,71 · MRR 0,67 |
+| `NLEmbedding.sentenceEmbedding` | 0,00 (pas de modèle français) | rappel@1 0,33 · @3 0,58 | 0,00 | rappel@1 0,14 |
+
+Hasard : rappel@1 0,04. Limites constatées : aucune capacité inter-langues ; les cosinus ne séparent pas le pertinent
+du hors-sujet (meilleur cosinus 0,73–0,92 pour une vraie question, 0,66–0,86 pour une question sans rapport), donc le
+score n'est jamais un seuil et l'IA ne s'appuie sur ce moteur que pour reclasser un résultat lexical.
+`https://llm.spboucher.ai/v1/embeddings` n'existe pas (404 ; `/v1/chat/completions` répond 401).
+
+Non fait dans cette branche : copie hors nœud elle-même (seulement le fichier d'état et le script de vérification) ;
+recherche et événements à travers les dossiers partagés (voir écarts D8, D9) ; interface web et clients natifs.

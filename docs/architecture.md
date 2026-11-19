@@ -146,3 +146,9 @@ des objets chiffrés ; restauration vérifiée par `scripts/restore-test.sh`. Vo
 
 OCR, recherche plein texte et sémantique, résumés et Q&A ; pilote S3 ; transcodage vidéo ; synchronisation
 Finder ou application iOS native ; partage entre comptes internes (espaces communs).
+
+## 12. 2.0 « Next Generation »
+
+Mise à niveau additive (migration `003_next`) : voir `docs/next/ARCHITECTURE-NEXT.md` (contrat) et
+`docs/next/API-NEXT.md` (formes JSON, écarts). Modules ajoutés dans `services/api/src` : `meta.ts`, `events.ts` + `sse.ts`,
+`textindex.ts`, `ai/`, `collections.ts`, `insights.ts`, `collab.ts` ; assistant local `infra/textkit/main.swift`.
