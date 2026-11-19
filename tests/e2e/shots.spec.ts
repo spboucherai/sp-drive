@@ -57,6 +57,16 @@ test('review screenshots', async ({ page, context }, info) => {
   await page.goto('/settings/appareils'); await settle(page); await shot('24-devices');
   await page.goto('/admin'); await settle(page); await page.waitForTimeout(500); await shot('25-admin');
   await page.goto('/ask'); await settle(page); await shot('26-ask');
+  // public pages, as an anonymous visitor
+  const share = await call<{ url: string }>(page, 'POST', '/shares', { folderId: d.projets });
+  const portal = await call<{ url: string }>(page, 'POST', '/requests', { folderId: d.projets, title: 'Pièces du dossier 4471', description: 'Déposez ici les documents demandés.', instructions: 'PDF ou images, une pièce par fichier.', brandName: 'Cabinet Boréal', brandColor: '#0f766e', fields: { name: 'required', email: 'optional', reference: 'off', custom: [{ key: 'dossier', label: 'Numéro de dossier', required: true }] }, requireConsent: true, consentText: 'J’accepte que ces pièces soient transmises au cabinet.' });
+  const anon = await page.context().browser()!.newContext({ viewport: phone ? { width: 390, height: 844 } : { width: 1440, height: 900 }, locale: 'fr-CA', baseURL: new URL(page.url()).origin });
+  const v = await anon.newPage();
+  const pub = async (name: string) => { for (const th of ['light', 'dark']) { await v.emulateMedia({ colorScheme: th as 'light' | 'dark' }); await v.waitForTimeout(350); await v.screenshot({ path: `${OUT}/${size}-${th}-${name}.png` }); } };
+  await v.goto(new URL(share.url).pathname); await settle(v); await pub('28-public-share');
+  await v.goto(new URL(portal.url).pathname); await settle(v); await pub('29-public-portal');
+  await v.getByTestId('file-input').setInputFiles({ name: 'piece.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 test') }); await v.waitForTimeout(400); await pub('30-public-portal-picked');
+  await anon.close();
   // viewer with the inspector docked
   await page.goto(`/open/${d.rapport.id}`); await expect(page.getByTestId('viewer')).toBeVisible(); await settle(page); await page.getByTestId('viewer-inspector').click(); await settle(page); await shot('27-viewer');
 });

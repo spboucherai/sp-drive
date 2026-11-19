@@ -114,6 +114,24 @@ export function Dialog({ title, onClose, children, footer, wide, dismissable = t
     const overflow = document.body.style.overflow; document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = overflow; prev?.focus?.(); };
   }, []);
+  // The focused control may disappear while the dialog is open (a button that no longer applies): the focus then
+  // falls on the page behind. Keys typed there still belong to the topmost dialog: Escape closes it, Tab comes back in.
+  const live = useRef({ onClose, dismissable });
+  live.current = { onClose, dismissable };
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      const el = ref.current;
+      if (!el || (e.key !== 'Escape' && e.key !== 'Tab')) return;
+      const a = document.activeElement;
+      if (a && a !== document.body && a !== document.documentElement) return;
+      const all = document.querySelectorAll('[role=dialog][aria-modal=true]');
+      if (all[all.length - 1] !== el) return;
+      e.preventDefault();
+      if (e.key === 'Escape') { if (live.current.dismissable) live.current.onClose(); } else (el.querySelector<HTMLElement>(FOCUSABLE) ?? el).focus();
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, []);
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape' && dismissable) { e.stopPropagation(); onClose(); }
     if (e.key !== 'Tab') return;

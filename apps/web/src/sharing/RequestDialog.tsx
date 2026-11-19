@@ -1,5 +1,7 @@
 // Create a deposit portal on a folder, or edit an existing one. The public link exists only at creation or after a
 // rotation: the server stores a hash, so it can never be shown again.
+import { useMedia } from '../explorer/lib.ts';
+import { type PortalDraft, PortalPreview } from '../next/PortalPreview.tsx';
 import { type CustomField, DEFAULT_FIELDS, type FieldMode } from '@spd/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useId, useRef, useState } from 'react';
@@ -35,6 +37,7 @@ export function RequestDialog({ folder, portal, onClose }: { folder: { id: strin
   const toast = useToast();
   const qc = useQueryClient();
   const formId = useId();
+  const sideBySide = useMedia('(min-width: 1024px)');
   const form = useRef<HTMLFormElement>(null);
   const [s, setS] = useState(() => ({
     title: portal?.title ?? '', description: portal?.description ?? '', instructions: portal?.instructions ?? '', brandName: portal?.brandName ?? '', brandColor: safeColor(portal?.brandColor),
@@ -107,10 +110,18 @@ export function RequestDialog({ folder, portal, onClose }: { folder: { id: strin
 
   const ink = inkOn(s.brandColor);
   const modes: FieldMode[] = ['off', 'optional', 'required'];
+  const draft: PortalDraft = {
+    title: s.title, description: s.description, instructions: s.instructions, brandName: s.brandName, brandColor: s.brandColor, ink, hasPassword: !!s.password || (!!portal?.hasPassword && !s.dropPassword), expiresAt: fromLocalInput(s.expires), active: s.active,
+    maxFileBytes: Math.round((Number(s.maxFileMb) || 0) * MIB), maxFiles: Number(s.maxFiles) || 0, extensions: s.extensions, name: s.name, email: s.email, reference: s.reference, custom: s.custom,
+    requireConsent: s.requireConsent, consentText: s.consentText, retentionNote: s.retentionNote, confirmation: s.confirmation, notify: s.notify, folderName: folder.name,
+  };
+  const draftPreview = <PortalPreview d={draft} />;
   const preset = Object.keys(PRESETS).find((k) => sameSet(PRESETS[k]!, s.extensions));
   return (
-    <Dialog title={portal ? t('sharing.portal.editTitle') : t('sharing.portal.newTitle')} onClose={onClose} wide
+    <Dialog title={portal ? t('sharing.portal.editTitle') : t('sharing.portal.newTitle')} onClose={onClose} wide="xl"
       footer={<><Button onClick={onClose}>{t('common.cancel')}</Button><Button type="submit" form={formId} variant="primary" busy={busy} icon={portal ? 'check' : 'inbox'}>{portal ? t('common.save') : t('sharing.portal.create')}</Button></>}>
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-start lg:gap-7">
+      {!sideBySide ? <details className="mb-4 rounded-[12px] border border-line px-3 py-2"><summary className="cursor-pointer text-[13px] font-medium text-accent">{t('next.pp.show')}</summary><div className="pt-3">{draftPreview}</div></details> : null}
       <form id={formId} ref={form} onSubmit={submit} noValidate className="space-y-5" data-testid="portal-form">
         <p className="flex items-center gap-2 rounded-xl bg-hover px-3 py-2 text-sm text-ink-2"><Glyph name="folder" size={18} className="shrink-0 text-accent" /><span className="min-w-0 truncate">{t('sharing.portal.target', { folder: folder.name })}</span></p>
 
@@ -220,6 +231,8 @@ export function RequestDialog({ folder, portal, onClose }: { folder: { id: strin
         </Section>
         {errors.form ? <p role="alert" className="rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{errors.form}</p> : null}
       </form>
+      {sideBySide ? <aside className="sticky top-0">{draftPreview}</aside> : null}
+      </div>
       {confirmRotate && portal ? <ConfirmDialog title={t('sharing.portal.rotate')} text={t('sharing.portal.rotateText')} confirmLabel={t('sharing.item.rotateConfirm')} onClose={() => setConfirmRotate(false)}
         onConfirm={async () => { const r = await post<{ url: string }>(`/requests/${portal.id}/rotate`); setRotated(true); setUrl(r.url); }} /> : null}
     </Dialog>

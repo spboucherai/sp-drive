@@ -241,3 +241,6 @@ h1, .spd-display, [role=dialog] > header h2, .spd-title { font-family: var(--spd
 
 @utility card { background: var(--surface); border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
 
+
+/* the transfer centre stays beside the inspector, never over it */
+@media (min-width: 1024px) { main:has(aside[data-testid='details']) ~ [data-testid='upload-panel'] { right: calc(22rem + 1rem); } }
