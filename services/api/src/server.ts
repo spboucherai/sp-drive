@@ -28,6 +28,27 @@ export const redactUrl = (url: string) => url.replace(/(\/(?:s|request|invite)\/
 const CSP = ["default-src 'self'", "script-src 'self' 'wasm-unsafe-eval'", "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob:", "media-src 'self' blob:", "font-src 'self' data:",
   "connect-src 'self'", "worker-src 'self' blob:", "object-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'"].join('; ');
 
+/** Chunk traffic of a resumable upload: `PATCH` (a chunk) and `GET` (where to resume) of one upload, owner or grant route. */
+const UPLOAD_CHUNK_URL = /^\/api\/v1\/(?:shared\/[0-9a-f-]{36}\/)?uploads\/[0-9a-f-]{36}(?:\?|$)/i;
+export const isUploadChunk = (method: string, url: string): boolean => (method === 'PATCH' || method === 'GET') && UPLOAD_CHUNK_URL.test(url);
+/** Per account: 100 chunk requests a second on average — 6 to 8 parallel uploads on a fast local network stay far below. */
+export const UPLOAD_CHUNKS_PER_MIN = 6000;
+/** Per address, for chunk requests whose cookie or bearer is not a live session (they never reach a handler). */
+export const UPLOAD_CHUNKS_BAD_CREDENTIAL_PER_MIN = 120;
+/** Fixed one-minute windows in memory (one API process; the same scope as the plugin's default store). */
+class MinuteBudget {
+  private hits = new Map<string, { n: number; until: number }>();
+  /** Count one request; returns 0 when allowed, else the seconds to wait. */
+  take(key: string, max: number): number {
+    const now = Date.now();
+    if (this.hits.size > 20_000) for (const [k, v] of this.hits) if (v.until <= now) this.hits.delete(k);
+    const h = this.hits.get(key);
+    if (!h || h.until <= now) { this.hits.set(key, { n: 1, until: now + 60_000 }); return 0; }
+    return ++h.n > max ? Math.max(1, Math.ceil((h.until - now) / 1000)) : 0;
+  }
+}
+const chunkBudget = new MinuteBudget();
+
 export async function buildServer(o: { logger?: boolean } = {}): Promise<FastifyInstance> {
   const app = Fastify({
     trustProxy: config.trustProxy, bodyLimit: 1024 * 1024,
@@ -35,7 +56,12 @@ export async function buildServer(o: { logger?: boolean } = {}): Promise<Fastify
       serializers: { req: (r) => ({ method: r.method, url: redactUrl(r.url), ip: r.ip }), res: (r) => ({ statusCode: r.statusCode }) } },
   });
   await app.register(cookie);
+  // Every address has 900 requests a minute. The chunks of resumable uploads (PATCH and status GET of one upload) are
+  // counted apart: a signed-in client sending several large files in parallel makes thousands of them, so they leave
+  // the per-address budget when the request carries a credential, and the hook below counts them per account
+  // (UPLOAD_CHUNKS_PER_MIN) once the session is known — or per address, tightly, when the credential is not valid.
   await app.register(rateLimit, { global: true, max: 900, timeWindow: '1 minute', keyGenerator: (req) => req.ip,
+    allowList: (req) => isUploadChunk(req.method, req.url) && (hasBearer(req) || !!req.headers.cookie),
     errorResponseBuilder: (_req, ctx) => { const e = new UserError('rate_limited', 'too many requests, slow down', 429, { retryAfterS: Math.ceil(ctx.ttl / 1000) }); return e; } });
   // upload chunks arrive as a raw stream and are written straight to disk
   app.addContentTypeParser('application/octet-stream', (_req, payload, done) => done(null, payload));
@@ -52,7 +78,10 @@ export async function buildServer(o: { logger?: boolean } = {}): Promise<Fastify
       // a bearer token is not an ambient credential: no other site can make a browser send it, so native clients skip the header
       if (!(hasBearer(req) && !req.headers.cookie) && (req.headers['x-spd-csrf'] !== '1' || (origin && origin !== config.origin))) throw new UserError('csrf', 'request refused', 403);
     }
-    req.session = await loadSession(req, reply);
+    const chunk = isUploadChunk(req.method, req.url) && (hasBearer(req) || !!req.headers.cookie);
+    const limit = (key: string, max: number) => { const wait = chunkBudget.take(key, max); if (wait) throw new UserError('rate_limited', 'too many requests, slow down', 429, { retryAfterS: wait }); };
+    try { req.session = await loadSession(req, reply); } catch (e) { if (chunk) limit(`ip:${req.ip}`, UPLOAD_CHUNKS_BAD_CREDENTIAL_PER_MIN); throw e; } // a bearer that is not a session is refused here
+    if (chunk) { if (req.session) limit(`u:${req.session.user.id}`, UPLOAD_CHUNKS_PER_MIN); else limit(`ip:${req.ip}`, UPLOAD_CHUNKS_BAD_CREDENTIAL_PER_MIN); }
   });
 
   app.setErrorHandler((err: Error & { statusCode?: number; validation?: unknown; code?: string }, req, reply) => {

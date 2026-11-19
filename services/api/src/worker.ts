@@ -42,12 +42,16 @@ type Kind = 'thumb' | 'image' | 'pdf' | 'sheet' | 'archive';
 async function savePreview(objectId: string, kind: Kind, path: string): Promise<void> {
   const size = (await stat(path)).size;
   const sealed = await sealFile(path, size);
-  const old = await sql<{ storage_key: string | null }[]>`select storage_key from previews where object_id = ${objectId} and kind = ${kind}`;
+  const old = await sql<{ storage_key: string | null; status: string }[]>`select storage_key, status from previews where object_id = ${objectId} and kind = ${kind}`;
   try {
     await sql`insert into previews (object_id, kind, status, storage_key, wrapped_key, size) values (${objectId}, ${kind}, 'ready', ${sealed.storage_key}, ${sealed.wrapped_key}, ${size})
       on conflict (object_id, kind) do update set status = 'ready', storage_key = excluded.storage_key, wrapped_key = excluded.wrapped_key, size = excluded.size, error = null, updated_at = now()`;
   } catch (e) { await driver.remove(sealed.storage_key); throw e; } // the object was deleted meanwhile
   if (old[0]?.storage_key) await driver.remove(old[0].storage_key);
+  // A file says `thumb: true` from now on: advance the revision of every live file whose current version is this
+  // content, so the change feed and the `change` event announce it (the write itself changes no column; the revision
+  // trigger takes the owner's tree lock and draws the next revision, the notify trigger wakes the listeners).
+  if (kind === 'thumb' && old[0]?.status !== 'ready') await sql`update files f set rev = f.rev from file_versions v where v.id = f.current_version_id and v.object_id = ${objectId} and f.trashed_at is null`;
   if (kind === 'thumb') await enqueue(sql, 'phash', { objectId }, { dedupeKey: `phash:${objectId}`, maxAttempts: 2 });
   // an old binary office file has no text of its own: its PDF rendition is what gets indexed
   if (kind === 'pdf' && config.indexContent) { const [x] = await sql`select 1 from object_text where object_id = ${objectId} and status = 'unsupported'`; if (x) await enqueueExtract(sql, objectId, true); }
