@@ -1,10 +1,18 @@
-// Floating list of transfers (bottom-right on desktop, bottom sheet on phones) and the name-collision question.
-// Positioned inside the listing column of the explorer: above the phone navigation bar, beside the details panel.
+// The transfer centre: every upload of this page (real progress, speed, remaining bytes, pause, resume, retry, cancel),
+// the sessions interrupted by a reload, the account's upload history from the server, and the name-collision question.
+// Mounted once by the shell, so it is reachable from every screen and transfers survive navigation.
 import { formatBytes } from '@spd/shared';
-import { memo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { memo, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { Link } from 'wouter';
+import { get } from '../api.ts';
 import { Glyph } from '../glyphs.tsx';
-import { errorText, getLocale, useT } from '../i18n.ts';
+import { errorText, fmtRelative, getLocale, useT } from '../i18n.ts';
+import { useExplorerContext } from '../next/context.ts';
+import { useFeature } from '../next/meta.ts';
+import type { UploadRecord } from '../next/types.ts';
 import { Button, cx, Dialog, IconButton, ProgressBar, Spinner } from '../ui.tsx';
+import { pickedFromInput } from './lib.ts';
 import { type Decision, type Pending, type UploadItem, uploads, useUploads } from './uploads.ts';
 
 function eta(seconds: number, t: ReturnType<typeof useT>): string {
@@ -30,7 +38,7 @@ const Row = memo(function Row({ it }: { it: UploadItem }) {
   else line = errorText(it.error);
   return (
     <li className="flex items-center gap-3 py-2.5 pr-2 pl-4" data-upload-state={it.state}>
-      <span className={cx('flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] transition-colors duration-300', it.state === 'done' ? 'bg-ok-soft text-ok' : it.state === 'error' ? 'bg-danger-soft text-danger' : it.state === 'uploading' || it.state === 'finishing' ? 'grad' : 'bg-hover text-ink-2')}>
+      <span className={cx('flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] transition-colors duration-300', it.state === 'done' ? 'bg-ok-soft text-ok' : it.state === 'error' ? 'bg-danger-soft text-danger' : it.state === 'uploading' || it.state === 'finishing' ? 'bg-accent-soft text-accent' : 'bg-hover text-ink-2')}>
         {it.state === 'finishing' ? <Spinner size={16} /> : <Glyph size={18} name={it.state === 'done' ? 'check' : it.state === 'error' ? 'warning' : it.state === 'paused' ? 'pause' : it.state === 'skipped' ? 'x' : 'upload'} />}
       </span>
       <div className="min-w-0 flex-1">
@@ -50,7 +58,7 @@ function PendingRow({ p }: { p: Pending }) {
   const t = useT();
   return (
     <li className="flex items-center gap-3 px-4 py-2">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] bg-warn-soft text-warn"><Glyph name="history" size={18} /></span>
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] bg-warn-soft text-warn"><Glyph name="history" size={18} /></span>
       <div className="min-w-0 flex-1"><p className="truncate text-sm text-ink">{p.name}</p><p className="text-xs text-ink-3">{formatBytes(p.size, getLocale())}</p></div>
       <Button size="sm" variant="ghost" onClick={() => uploads.forget(p.uploadId)}>{t('explorer.up.forget')}</Button>
     </li>
@@ -79,73 +87,164 @@ function ConflictDialog({ it, many }: { it: UploadItem; many: boolean }) {
   );
 }
 
-/** Overall progress as a ring with the percentage inside. */
-function Ring({ value }: { value: number }) {
+/** Overall progress as a ring. */
+function Ring({ value, size = 36, label }: { value: number; size?: number; label?: boolean }) {
   const v = Math.max(0, Math.min(1, value)), r = 15, c = 2 * Math.PI * r;
   return (
-    <span className="relative flex h-9 w-9 shrink-0 items-center justify-center" aria-hidden="true">
-      <svg width="36" height="36" viewBox="0 0 36 36" className="-rotate-90">
-        <defs><linearGradient id="spd-ring" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="var(--grad-a)" /><stop offset="1" stopColor="var(--grad-b)" /></linearGradient></defs>
-        <circle cx="18" cy="18" r={r} fill="none" stroke="var(--hover)" strokeWidth="3.5" />
-        <circle cx="18" cy="18" r={r} fill="none" stroke="url(#spd-ring)" strokeWidth="3.5" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - v)} className="transition-[stroke-dashoffset] duration-300" />
+    <span className="relative flex shrink-0 items-center justify-center" style={{ width: size, height: size }} aria-hidden="true">
+      <svg width={size} height={size} viewBox="0 0 36 36" className="-rotate-90">
+        <circle cx="18" cy="18" r={r} fill="none" stroke="var(--spd-color-sunken)" strokeWidth="3.5" />
+        <circle cx="18" cy="18" r={r} fill="none" stroke="var(--spd-color-brand)" strokeWidth="3.5" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - v)} style={{ transition: 'stroke-dashoffset var(--spd-motion-progress)' }} />
       </svg>
-      <span className="absolute text-[10px] font-bold text-ink tabular-nums">{Math.round(v * 100)}</span>
+      {label ? <span className="absolute text-[10px] font-semibold text-ink tabular-nums">{Math.round(v * 100)}</span> : null}
     </span>
   );
 }
 
-let panelOpen = true; // survives the remount of the explorer between folders
+// --- open / closed: one store, so the header button and the palette can open the centre from anywhere ---
+let centreOpen = false, listOpen = true;
+const openListeners = new Set<() => void>();
+export const transferCentre = {
+  open(): void { centreOpen = true; listOpen = true; openListeners.forEach((f) => f()); },
+  close(): void { centreOpen = false; openListeners.forEach((f) => f()); },
+  toggle(): void { if (centreOpen) this.close(); else this.open(); },
+};
+const useCentreOpen = (): boolean => useSyncExternalStore((cb) => { openListeners.add(cb); return () => openListeners.delete(cb); }, () => centreOpen);
 /** True while the panel takes room at the bottom of the screen (the listing adds padding on phones). */
-export function useUploadPanelVisible(): boolean { const s = useUploads(); return s.items.length > 0 || s.pending.length > 0; }
+export function useUploadPanelVisible(): boolean { const s = useUploads(); const o = useCentreOpen(); return o || s.items.length > 0 || s.pending.length > 0; }
 
-export function UploadPanel() {
+function totals(items: UploadItem[]) {
+  const live = items.filter((i) => i.state !== 'skipped');
+  const total = live.reduce((n, i) => n + i.size, 0), sent = live.reduce((n, i) => n + (i.state === 'done' ? i.size : i.sent), 0);
+  const speed = items.reduce((n, i) => n + (i.state === 'uploading' ? i.speed : 0), 0);
+  return { total, sent, speed, left: Math.max(0, total - sent) };
+}
+
+/** The button of the top bar: a ring while something travels, a count of what failed. */
+export function TransferButton() {
   const t = useT();
+  const { items } = useUploads();
+  const open = useCentreOpen();
+  const active = items.filter((i) => uploads.isActive(i) || i.state === 'paused'), failed = items.filter((i) => i.state === 'error').length;
+  const { total, sent } = totals(items);
+  const label = active.length ? t('next.tc.buttonActive', { n: active.length }) : t('next.tc.button');
+  return (
+    <button type="button" aria-label={label} title={label} aria-expanded={open} data-testid="transfer-button" onClick={() => transferCentre.toggle()}
+      className={cx('press relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-2 hover:bg-hover hover:text-ink', open && 'bg-accent-soft text-accent')}>
+      {active.length ? <Ring value={total ? sent / total : 0} size={26} /> : <Glyph name="swap" size={20} />}
+      {active.length ? <Glyph name="arrowUp" size={11} strokeWidth={2.6} className="absolute text-accent" /> : null}
+      {failed ? <span className="absolute top-1.5 right-1.5 h-2.5 w-2.5 rounded-full bg-danger ring-2 ring-bg"><span className="sr-only">{t('explorer.up.titleFailed', { n: failed })}</span></span> : null}
+    </button>
+  );
+}
+
+function HistoryRow({ u }: { u: UploadRecord }) {
+  const t = useT();
+  const loc = getLocale();
+  const state = u.status === 'done' ? (u.fileExists ? t('next.tc.hDone') : t('next.tc.hGone')) : u.status === 'aborted' ? t('next.tc.hAborted') : t('next.tc.hActive', { pct: Math.round((u.received / Math.max(1, u.size)) * 100) });
+  const href = u.status === 'done' && u.fileExists ? (u.grantId ? `/shared/${u.grantId}` : u.folderId && u.fileId ? `/folder/${u.folderId}?file=${u.fileId}` : null) : null;
+  const body = (
+    <>
+      <span className={cx('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg', u.status === 'done' ? 'bg-ok-soft text-ok' : u.status === 'aborted' ? 'bg-hover text-ink-3' : 'bg-accent-soft text-accent')}><Glyph size={15} strokeWidth={2} name={u.status === 'done' ? 'check' : u.status === 'aborted' ? 'x' : 'upload'} /></span>
+      <span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium text-ink">{u.name}</span><span className="block truncate text-xs text-ink-3">{formatBytes(u.size, loc)} · {state} · {fmtRelative(u.updatedAt)}{u.grantId ? ` · ${t('next.tc.hShared')}` : ''}</span></span>
+      {href ? <Glyph name="chevronRight" size={14} className="shrink-0 text-ink-3" /> : null}
+    </>
+  );
+  const cls = 'flex items-center gap-3 px-4 py-2';
+  return <li data-status={u.status}>{href ? <Link href={href} className={cx(cls, 'transition-colors hover:bg-hover')} onClick={() => { if (window.matchMedia('(max-width: 639px)').matches) transferCentre.close(); }}>{body}</Link> : <div className={cls}>{body}</div>}</li>;
+}
+function History() {
+  const t = useT();
+  const q = useQuery({ queryKey: ['next', 'uploads', 'recent'], queryFn: () => get<{ uploads: UploadRecord[] }>('/uploads?state=recent&limit=100'), refetchOnMount: 'always' });
+  if (q.isLoading) return <div className="flex justify-center py-8 text-accent"><Spinner /></div>;
+  if (q.error) return <p role="alert" className="px-4 py-6 text-center text-sm text-danger">{errorText(q.error)}</p>;
+  const list = q.data?.uploads ?? [];
+  if (!list.length) return <p className="px-6 py-8 text-center text-sm text-ink-3">{t('next.tc.hEmpty')}</p>;
+  return <><ul className="divide-y divide-line" data-testid="upload-history">{list.map((u) => <HistoryRow key={u.id} u={u} />)}</ul><p className="border-t border-line px-4 py-2 text-xs text-ink-3">{t('next.tc.hNote')}</p></>;
+}
+
+export function TransferCentre() {
+  const t = useT();
+  const loc = getLocale();
   const { items, pending, batchSizes } = useUploads();
-  const [open, setOpenState] = useState(panelOpen);
-  const setOpen = (v: boolean) => { panelOpen = v; setOpenState(v); };
+  const asked = useCentreOpen();
+  const ctx = useExplorerContext();
+  const hasHistory = useFeature('upload-history');
+  const [open, setOpenState] = useState(listOpen);
+  const setOpen = (v: boolean) => { listOpen = v; setOpenState(v); };
+  useEffect(() => { if (asked) setOpenState(true); }, [asked]);
+  const [tab, setTab] = useState<'now' | 'history'>('now');
   const [hidePending, setHidePending] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
   const conflict = items.find((i) => i.state === 'conflict');
   const showPending = pending.length > 0 && !hidePending;
-  if (!items.length && !showPending) return null;
+  const dialog = conflict ? <ConflictDialog key={conflict.key} it={conflict} many={(batchSizes[conflict.batch] ?? 1) > 1} /> : null;
+  if (!asked && !items.length && !showPending) return dialog;
   const active = items.filter(uploads.isActive), paused = items.filter((i) => i.state === 'paused'), failed = items.filter((i) => i.state === 'error');
   const finished = items.filter((i) => i.state === 'done' || i.state === 'skipped');
-  const total = items.reduce((n, i) => n + i.size, 0), sent = items.reduce((n, i) => n + (i.state === 'done' || i.state === 'skipped' ? i.size : i.sent), 0);
+  const { total, sent, speed, left } = totals(items);
+  const busy = active.length > 0 || paused.length > 0;
   const title = active.length ? t('explorer.up.titleActive', { n: active.length })
     : failed.length ? t('explorer.up.titleFailed', { n: failed.length })
     : paused.length ? t('explorer.up.titlePaused', { n: paused.length })
     : items.length ? t('explorer.up.titleDone', { n: finished.filter((i) => i.state === 'done').length })
-    : t('explorer.up.titlePending', { n: pending.length });
+    : pending.length && showPending ? t('explorer.up.titlePending', { n: pending.length })
+    : t('next.tc.title');
+  const now = tab === 'now' || !hasHistory;
+  const dest = ctx.folder;
   return (
     <>
       <section aria-label={t('explorer.up.label')} data-testid="upload-panel" style={{ bottom: 'calc(var(--dock) + 10px)' }}
-        className="anim-pop absolute inset-x-3 z-40 flex max-h-[55%] flex-col overflow-hidden rounded-[24px] bg-raised shadow-pop ring-1 ring-(--glass-line) sm:inset-x-auto sm:right-4 sm:max-h-[70%] sm:w-[26rem]">
-        <header className="flex items-center gap-1 py-2 pr-2 pl-4">
-          {active.length || paused.length ? <Ring value={total ? sent / total : 0} /> : <span className={cx('flex h-9 w-9 shrink-0 items-center justify-center rounded-full', failed.length ? 'bg-danger-soft text-danger' : 'bg-ok-soft text-ok')}><Glyph name={failed.length ? 'warning' : items.length ? 'check' : 'history'} size={18} strokeWidth={2.2} /></span>}
-          <h2 className="min-w-0 flex-1 truncate pl-2 text-sm font-bold tracking-tight text-ink sm:text-[15px]" aria-live="polite">{title}</h2>
+        className="anim-pop absolute inset-x-3 z-40 flex max-h-[62%] flex-col overflow-hidden rounded-[14px] bg-raised shadow-pop sm:inset-x-auto sm:right-4 sm:max-h-[72%] sm:w-[25rem]">
+        <header className="flex items-center gap-1 py-1.5 pr-1.5 pl-3.5">
+          {busy ? <Ring value={total ? sent / total : 0} label /> : <span className={cx('flex h-9 w-9 shrink-0 items-center justify-center rounded-full', failed.length ? 'bg-danger-soft text-danger' : items.length ? 'bg-ok-soft text-ok' : 'bg-hover text-ink-2')}><Glyph name={failed.length ? 'warning' : items.length ? 'check' : pending.length && showPending ? 'history' : 'swap'} size={18} strokeWidth={2} /></span>}
+          <div className="min-w-0 flex-1 pl-2">
+            <h2 className="truncate text-sm font-semibold text-ink" aria-live="polite">{title}</h2>
+            {busy ? <p className="truncate text-xs text-ink-3 tabular-nums" data-testid="transfer-summary">{t('next.tc.left', { left: formatBytes(left, loc) })}{speed > 0 ? ` · ${formatBytes(speed, loc)}/s · ${eta(left / speed, t)}` : ''}</p> : null}
+          </div>
           {finished.length ? <Button size="sm" variant="ghost" onClick={() => uploads.clearFinished()}>{t('explorer.up.clear')}</Button> : null}
           <IconButton icon={open ? 'chevronDown' : 'arrowUp'} label={open ? t('explorer.up.collapse') : t('explorer.up.expand')} size={18} aria-expanded={open} onClick={() => setOpen(!open)} />
+          {asked ? <IconButton icon="x" label={t('common.close')} size={18} onClick={() => transferCentre.close()} /> : null}
         </header>
-        {active.length || paused.length ? <div className="px-4 pb-2.5"><ProgressBar value={total ? sent / total : 0} label={t('explorer.up.overall')} /></div> : null}
+        {busy ? <div className="px-3.5 pb-2.5"><ProgressBar value={total ? sent / total : 0} label={t('explorer.up.overall')} /></div> : null}
         {open ? (
-          <div className="min-h-0 flex-1 overflow-y-auto border-t border-line">
-            {items.length ? <ul className="divide-y divide-line">{items.map((it) => <Row key={it.key} it={it} />)}</ul> : null}
-            {showPending ? (
-              <div className={cx(items.length > 0 && 'border-t border-line')}>
-                <div className="flex items-start gap-2 px-4 pt-3">
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-xs font-semibold tracking-wide text-ink-2 uppercase">{t('explorer.up.pendingTitle', { n: pending.length })}</h3>
-                    <p className="mt-1 text-xs leading-relaxed text-ink-3">{t('explorer.up.pendingText')}</p>
-                  </div>
-                  <IconButton icon="x" label={t('explorer.up.pendingHide')} size={16} className="-mt-1.5 -mr-2" onClick={() => setHidePending(true)} />
-                </div>
-                <ul className="pb-1">{pending.map((p) => <PendingRow key={p.uploadId} p={p} />)}</ul>
+          <div className="flex min-h-0 flex-1 flex-col border-t border-line">
+            {hasHistory && (asked || tab === 'history') ? (
+              <div role="tablist" aria-label={t('next.tc.title')} className="flex shrink-0 gap-1 border-b border-line px-2.5 py-1.5">
+                {(['now', 'history'] as const).map((k) => <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className={cx('h-8 rounded-lg px-3 text-[13px] transition-colors', tab === k ? 'bg-selection font-medium text-ink' : 'text-ink-2 hover:bg-hover')}>{t(k === 'now' ? 'next.tc.tabNow' : 'next.tc.tabHistory')}</button>)}
               </div>
             ) : null}
-            <p className="border-t border-line px-4 py-2 text-xs leading-relaxed text-ink-3">{t('explorer.up.note')}</p>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {now ? (
+                <>
+                  {items.length ? <ul className="divide-y divide-line">{items.map((it) => <Row key={it.key} it={it} />)}</ul> : null}
+                  {showPending ? (
+                    <div className={cx(items.length > 0 && 'border-t border-line')}>
+                      <div className="flex items-start gap-2 px-4 pt-3">
+                        <div className="min-w-0 flex-1">
+                          <h3 className="spd-eyebrow">{t('explorer.up.pendingTitle', { n: pending.length })}</h3>
+                          <p className="mt-1 text-xs leading-relaxed text-ink-3">{t('explorer.up.pendingText')}</p>
+                        </div>
+                        <IconButton icon="x" label={t('explorer.up.pendingHide')} size={16} className="-mt-1.5 -mr-2" onClick={() => setHidePending(true)} />
+                      </div>
+                      <ul className="pb-1">{pending.map((p) => <PendingRow key={p.uploadId} p={p} />)}</ul>
+                    </div>
+                  ) : null}
+                  {!items.length && !showPending ? (
+                    <div className="flex flex-col items-center gap-3 px-6 py-7 text-center">
+                      <p className="spd-title text-[17px] text-ink">{t('next.tc.idle')}</p>
+                      <p className="max-w-xs text-[13px] leading-relaxed text-ink-2">{t('next.tc.idleText')}</p>
+                      <input ref={input} type="file" multiple hidden data-testid="transfer-input" onChange={(e) => { const list = pickedFromInput(e.target.files); e.target.value = ''; if (list.length) uploads.enqueue(list, dest?.id ?? 'root'); }} />
+                      <Button variant="primary" icon="upload" onClick={() => input.current?.click()}>{dest ? t('next.tc.uploadTo', { name: dest.name }) : t('next.tc.uploadRoot')}</Button>
+                    </div>
+                  ) : <p className="border-t border-line px-4 py-2 text-xs leading-relaxed text-ink-3">{t('explorer.up.note')}</p>}
+                </>
+              ) : <History />}
+            </div>
           </div>
         ) : null}
       </section>
-      {conflict ? <ConflictDialog key={conflict.key} it={conflict} many={(batchSizes[conflict.batch] ?? 1) > 1} /> : null}
+      {dialog}
     </>
   );
 }

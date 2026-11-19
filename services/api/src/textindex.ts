@@ -314,7 +314,10 @@ export function textRoutes(app: FastifyInstance): void {
     const f = await getFile(sql, userOf(req).id, id, { trashed: true });
     const [x] = await sql<{ status: TextStatus; source: string; pages: number; chars: number; error: string | null }[]>`select status, source, pages, chars, error from object_text where object_id = ${f.object_id!}`;
     if (!x) {
-      const waiting = config.indexContent && !!textFamily(f.name) && (f.scan_status === 'pending' || f.scan_status === 'clean');
+      // Where the antivirus is optional and absent, the scan ends as "error / scanner_unavailable" and the extraction is
+      // queued right after: that file is waiting too, not "unsupported" (a client stops polling on that answer).
+      const [o] = f.scan_status === 'error' && config.avMode === 'optional' ? await sql<{ scan_detail: string | null }[]>`select scan_detail from storage_objects where id = ${f.object_id!}` : [];
+      const waiting = config.indexContent && !!textFamily(f.name) && (f.scan_status === 'pending' || f.scan_status === 'clean' || o?.scan_detail === 'scanner_unavailable');
       return { status: (waiting ? 'pending' : 'unsupported') as TextStatus, source: null, pages: 0, chars: 0, excerpt: '', error: null };
     }
     const first = x.status === 'ready' ? await sql<{ text: string }[]>`select text from object_passages where object_id = ${f.object_id!} order by seq limit 2` : [];

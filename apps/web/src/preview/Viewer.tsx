@@ -23,13 +23,13 @@ const MarkdownView = lazy(() => import('./MarkdownView.tsx').then((m) => ({ defa
 const IMMERSIVE = new Set(['image', 'svg', 'heic', 'video', 'audio', 'pdf', 'office']);
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),video[controls],audio[controls],[tabindex]:not([tabindex="-1"])';
 
-function OfficeView({ source }: { source: PreviewSource }) {
+function OfficeView({ source, page }: { source: PreviewSource; page?: number }) {
   const t = useT();
   const url = source.previewUrl('pdf');
   const [state, retry] = useDerived<undefined>(url, 'probe');
   return (
     <DerivedGate state={state} retry={retry} source={source}>
-      {() => <><Note testId="converted-note">{t('preview.convertedNote')}</Note><div className="min-h-0 flex-1"><PdfView url={url} source={source} /></div></>}
+      {() => <><Note testId="converted-note">{t('preview.convertedNote')}</Note><div className="min-h-0 flex-1"><PdfView url={url} source={source} initialPage={page} /></div></>}
     </DerivedGate>
   );
 }
@@ -39,10 +39,10 @@ function HeicView({ source }: { source: PreviewSource }) {
   return <DerivedGate state={state} retry={retry} source={source}>{() => <ImageView src={url} source={source} />}</DerivedGate>;
 }
 
-function Body({ source }: { source: PreviewSource }) {
+function Body({ source, page }: { source: PreviewSource; page?: number }) {
   switch (source.kind) {
-    case 'pdf': return <PdfView url={source.contentUrl()} source={source} />;
-    case 'office': return <OfficeView source={source} />;
+    case 'pdf': return <PdfView url={source.contentUrl()} source={source} initialPage={page} />;
+    case 'office': return <OfficeView source={source} page={page} />;
     case 'image': return <ImageView src={source.contentUrl()} source={source} />;
     case 'svg': return <ImageView src={source.contentUrl()} source={source} vector />;
     case 'heic': return <HeicView source={source} />;
@@ -66,7 +66,8 @@ function scrollsSideways(target: EventTarget | null, stop: HTMLElement): boolean
 }
 
 /** Full-screen preview of one file. `actions` are extra buttons for the toolbar (share, details…). */
-export function Viewer({ source, onClose, onPrev, onNext, actions }: { source: PreviewSource; onClose: () => void; onPrev?: () => void; onNext?: () => void; actions?: ReactNode }) {
+export function Viewer({ source, onClose, onPrev, onNext, actions, initialPage, side }: { source: PreviewSource; onClose: () => void; onPrev?: () => void; onNext?: () => void; actions?: ReactNode; initialPage?: number;
+  /** a panel docked on the right of the content (bottom sheet on phones): the inspector, "ask this document" */ side?: ReactNode }) {
   const t = useT();
   const rootRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -155,17 +156,20 @@ export function Viewer({ source, onClose, onPrev, onNext, actions }: { source: P
           </div>
         </div>
       </header>
-      <div className="relative flex min-h-0 flex-1 flex-col" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={() => { touch.current = null; }}
-        style={{ paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>
+      <div className="flex min-h-0 flex-1 max-lg:flex-col">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={() => { touch.current = null; }}
+        style={{ paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)', viewTransitionName: 'spd-morph' }}>
         <ViewerCtx.Provider value={ctx}>
           <Suspense fallback={<Busy label={t('common.loading')} />}>
-            <div key={source.id} className="safe-b flex min-h-0 flex-1 flex-col" data-testid="viewer-body"><Guard source={source}><Body source={source} /></Guard></div>
+            <div key={source.id} className="safe-b flex min-h-0 flex-1 flex-col" data-testid="viewer-body"><Guard source={source}><Body source={source} page={initialPage} /></Guard></div>
           </Suspense>
         </ViewerCtx.Provider>
         {onPrev ? <button type="button" onClick={onPrev} aria-label={t('preview.previous')} title={t('preview.previous')} data-testid="viewer-prev"
           className="absolute left-3 top-1/2 z-20 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full glass press text-ink shadow-pop sm:flex"><Glyph name="chevronLeft" size={22} /></button> : null}
         {onNext ? <button type="button" onClick={onNext} aria-label={t('preview.next')} title={t('preview.next')} data-testid="viewer-next"
           className="absolute right-3 top-1/2 z-20 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full glass press text-ink shadow-pop sm:flex"><Glyph name="chevronRight" size={22} /></button> : null}
+      </div>
+      {side ? <aside data-testid="viewer-side" data-noswipe className="anim-side flex max-h-[55%] min-h-0 w-full shrink-0 flex-col border-t border-line bg-surface lg:max-h-none lg:w-[24rem] lg:border-t-0 lg:border-l">{side}</aside> : null}
       </div>
     </div>, document.body);
 }

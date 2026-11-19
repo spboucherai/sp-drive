@@ -4,13 +4,14 @@ import { useSyncExternalStore } from 'react';
 import { account } from './i18n/account.ts';
 import { common } from './i18n/common.ts';
 import { explorer } from './i18n/explorer.ts';
+import { next } from './i18n/next.ts';
 import { preview } from './i18n/preview.ts';
 import { publicPages } from './i18n/public.ts';
 import { sharing } from './i18n/sharing.ts';
 
 export type Locale = 'fr' | 'en';
 export type Dict = { fr: Record<string, string>; en: Record<string, string> };
-const AREAS: Record<string, Dict> = { common, account, explorer, preview, public: publicPages, sharing };
+const AREAS: Record<string, Dict> = { common, account, explorer, preview, public: publicPages, sharing, next };
 
 const KEY = 'spd.locale';
 let locale: Locale = ((): Locale => {

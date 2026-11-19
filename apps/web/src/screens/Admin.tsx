@@ -1,4 +1,5 @@
 // Administration: accounts and quotas, invitations, and the state of the system.
+import { InfrastructureCard } from '../next/Infra.tsx';
 import { formatBytes } from '@spd/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, type ReactNode, useState } from 'react';
@@ -246,6 +247,7 @@ export function Admin() {
   return (
     <Page wide title={t('account.admin.title')} text={t('account.admin.subtitle')}>
       <SystemCard />
+      <InfrastructureCard />
       <Users />
       <Invites />
     </Page>

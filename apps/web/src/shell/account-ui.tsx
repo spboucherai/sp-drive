@@ -63,20 +63,17 @@ export function AuthFrame({ title, subtitle, children, footer, wide }: { title: 
   return (
     <div className="aurora safe-t safe-b flex min-h-dvh flex-col overflow-hidden bg-bg">
       <header className="flex items-center justify-between py-2 pr-3 pl-5 sm:px-6 sm:py-3">
-        <span className="text-[15px] font-bold tracking-tight text-ink">{t('common.appName')}</span>
+        <span className="spd-title text-[16px] text-ink">{t('common.appName')}</span>
         <div className="flex items-center"><LanguageToggle /><ThemeToggle /></div>
       </header>
       <main className="flex flex-1 flex-col justify-center px-5 pt-4 pb-10">
         <div className={cx('anim-rise mx-auto w-full', wide ? 'max-w-lg' : 'max-w-md')}>
           <div className="mb-7 px-1">
-            <span className="relative inline-flex">
-              <span aria-hidden="true" className="grad absolute inset-1 rounded-3xl opacity-60 blur-2xl" />
-              <span className="anim-float relative inline-flex"><Mark size={68} /></span>
-            </span>
-            <h1 className="mt-7 text-[34px] leading-[1.06] font-bold tracking-[-0.035em] text-ink sm:text-[40px]">{title}</h1>
+            <Mark size={56} />
+            <h1 className="mt-6 text-[34px] leading-[1.08] text-ink sm:text-[40px]">{title}</h1>
             {subtitle ? <p className="mt-3 text-[17px] leading-relaxed text-ink-2">{subtitle}</p> : null}
           </div>
-          <div className="glass rounded-[28px] p-5 shadow-pop sm:p-7">{children}</div>
+          <div className="rounded-[14px] bg-surface p-5 shadow-(--spd-elevation-e1) sm:p-7">{children}</div>
           {footer ? <div className="mt-6 text-center text-[15px] text-ink-2">{footer}</div> : null}
         </div>
       </main>

@@ -1,10 +1,10 @@
 /* Styles of the preview viewer that utilities cannot express: kind colours, text lines, Markdown prose, pdf.js text layer. */
 
 /* --- icon tiles: one colour per family, tuned for both themes --- */
-.spd-thumb { --tile: #6a6a80; background: linear-gradient(145deg, color-mix(in srgb, var(--tile) 20%, var(--surface)), color-mix(in srgb, var(--tile) 9%, var(--surface))); color: var(--tile); }
-/* folders carry the gradient of the family */
-.spd-thumb[data-family='folder'], .dark .spd-thumb[data-family='folder'] { background: linear-gradient(140deg, var(--grad-a), var(--grad-b)); color: #fff; box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25); }
-.spd-thumb[data-family='folder'] svg { fill: rgb(255 255 255 / 0.26); }
+.spd-thumb { --tile: #6a6a80; background: color-mix(in srgb, var(--tile) 9%, var(--spd-color-sunken)); color: var(--tile); }
+/* folders carry the accent, flat (the indigo → violet gradient lives in the app mark only) */
+.spd-thumb[data-family='folder'], .dark .spd-thumb[data-family='folder'] { background: var(--spd-color-brand-wash); color: var(--spd-color-brand); }
+.spd-thumb[data-family='folder'] svg { fill: color-mix(in srgb, var(--spd-color-brand) 22%, transparent); }
 .spd-thumb[data-family='image'] { --tile: #0b8a8a; }
 .spd-thumb[data-family='video'] { --tile: #7c3aed; }
 .spd-thumb[data-family='audio'] { --tile: #be2a9f; }
@@ -13,7 +13,7 @@
 .spd-thumb[data-family='sheet'] { --tile: #188038; }
 .spd-thumb[data-family='archive'] { --tile: #9a6b00; }
 .spd-thumb[data-family='text'] { --tile: #4a5565; }
-.dark .spd-thumb { --tile: #9a9ab2; background: linear-gradient(145deg, color-mix(in srgb, var(--tile) 26%, var(--surface)), color-mix(in srgb, var(--tile) 11%, var(--surface))); }
+.dark .spd-thumb { --tile: #9a9ab2; background: color-mix(in srgb, var(--tile) 12%, var(--spd-color-sunken)); }
 .dark .spd-thumb[data-family='image'] { --tile: #4fd1c5; }
 .dark .spd-thumb[data-family='video'] { --tile: #b79bff; }
 .dark .spd-thumb[data-family='audio'] { --tile: #f08bdc; }

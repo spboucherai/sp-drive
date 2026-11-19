@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useRef, useState } from 'react';
 import { Link } from 'wouter';
 import { get, post, del } from '../api.ts';
+import { Glyph } from '../glyphs.tsx';
 import { errorText, fmtDate, getLocale, useT } from '../i18n.ts';
 import { Thumb } from '../preview/Thumb.tsx';
 import { ownerSource } from '../sources.ts';
@@ -15,11 +16,11 @@ import { uploads } from './uploads.ts';
 
 export const fileKey = (id: string) => [XKEY, 'file', id];
 const Line = ({ label, children }: { label: string; children: ReactNode }) => (
-  <div className="flex gap-3 border-b border-line py-2.5 text-[15px] last:border-b-0 sm:text-sm"><dt className="w-24 shrink-0 text-ink-3">{label}</dt><dd className="min-w-0 flex-1 break-words text-ink">{children}</dd></div>
+  <div className="flex gap-3 border-b border-line py-2 text-[15px] last:border-b-0 sm:text-[13px]"><dt className="w-24 shrink-0 text-ink-3">{label}</dt><dd className="min-w-0 flex-1 break-words text-ink">{children}</dd></div>
 );
 export const pathText = (path: Crumb[], root: string) => path.map((c, i) => (i === 0 ? root : c.name)).join(' / ');
 
-function Versions({ file, versions, readOnly }: { file: FileItem; versions: Version[]; readOnly: boolean }) {
+function Versions({ file, versions, readOnly, onTimeMachine }: { file: FileItem; versions: Version[]; readOnly: boolean; onTimeMachine?: (f: FileItem) => void }) {
   const t = useT();
   const qc = useQueryClient();
   const toast = useToast();
@@ -32,7 +33,10 @@ function Versions({ file, versions, readOnly }: { file: FileItem; versions: Vers
   const note = (v: Version) => { const m = /^restored from version (\d+)$/.exec(v.note); return m ? t('explorer.ver.restoredFrom', { n: Number(m[1]) }) : v.note; };
   return (
     <section className="mt-5">
-      <h3 className="mb-1 text-xs font-semibold tracking-wide text-ink-3 uppercase">{t('explorer.ver.title', { n: versions.length })}</h3>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <h3 className="spd-eyebrow">{t('explorer.ver.title', { n: versions.length })}</h3>
+        {onTimeMachine ? <button type="button" onClick={() => onTimeMachine(file)} data-testid="open-time-machine" className="inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-xs font-medium text-accent hover:bg-accent-soft"><Glyph name="history" size={13} />{t('next.tm.open')}</button> : null}
+      </div>
       <ul className="divide-y divide-line" aria-label={t('explorer.ver.title', { n: versions.length })}>
         {versions.map((v) => (
           <li key={v.id} className="flex items-center gap-1 py-2">
@@ -59,8 +63,8 @@ function Versions({ file, versions, readOnly }: { file: FileItem; versions: Vers
   );
 }
 
-export interface DetailsProps { item: Item; tags: Map<string, Tag>; folderPath?: Crumb[]; onTags: (f: FileItem) => void; onShare: (i: Item) => void; onClose: () => void }
-export function DetailsBody({ item, tags, folderPath, onTags, onShare, onClose }: DetailsProps) {
+export interface DetailsProps { item: Item; tags: Map<string, Tag>; folderPath?: Crumb[]; onTags: (f: FileItem) => void; onShare: (i: Item) => void; onClose: () => void; onTimeMachine?: (f: FileItem) => void }
+export function DetailsBody({ item, tags, folderPath, onTags, onShare, onClose, onTimeMachine }: DetailsProps) {
   const t = useT();
   const [copied, setCopied] = useState(false);
   const q = useQuery({ queryKey: fileKey(item.id), queryFn: () => get<FileDetail>(`/files/${item.id}`), enabled: item.type === 'file' });
@@ -73,13 +77,13 @@ export function DetailsBody({ item, tags, folderPath, onTags, onShare, onClose }
   return (
     <div>
       <div className="flex flex-col items-center gap-3 pt-1 pb-2 text-center">
-        <Thumb name={cur.name} kind={file ? file.kind : 'folder'} className="h-24 w-24 shrink-0 overflow-hidden rounded-[26px] shadow-(--shadow-card)"
+        <Thumb name={cur.name} kind={file ? file.kind : 'folder'} className="h-20 w-20 shrink-0 overflow-hidden rounded-[14px] shadow-(--shadow-card)"
           src={file && file.thumb && file.scan !== 'infected' ? ownerSource(file).previewUrl('thumb') : undefined} />
-        <p className="max-w-full min-w-0 text-[17px] font-bold tracking-tight break-words text-ink">{cur.name}</p>
+        <p className="max-w-full min-w-0 text-[15px] leading-snug font-semibold break-words text-ink">{cur.name}</p>
       </div>
       {file?.scan === 'infected' ? <p role="alert" className="mt-3 rounded-xl bg-danger-soft px-3 py-2 text-sm text-danger">{t('explorer.infectedText')}</p> : null}
       {file?.origin === 'request' ? <p className="mt-3 rounded-xl bg-accent-soft px-3 py-2 text-sm text-ink-2">{t('explorer.viaPortal')}</p> : null}
-      <dl className="mt-3 rounded-2xl bg-hover/60 px-4 py-1">
+      <dl className="mt-3 rounded-[10px] bg-hover px-3 py-0.5">
         <Line label={t('explorer.d.type')}>{file ? `${t(`explorer.kind.${file.kind}`)}${ext ? ` (.${ext})` : ''}` : t('explorer.kind.folder')}</Line>
         {file ? <Line label={t('explorer.d.size')}>{formatBytes(file.size, getLocale())}<span className="text-ink-3"> · {t('explorer.d.bytes', { n: new Intl.NumberFormat(getLocale()).format(file.size) })}</span></Line> : null}
         <Line label={t('explorer.d.updated')}>{fmtDate(cur.updatedAt)}</Line>
@@ -117,7 +121,7 @@ export function DetailsBody({ item, tags, folderPath, onTags, onShare, onClose }
           </Line>
         ) : null}
       </dl>
-      {file ? (q.isLoading ? <Loading /> : q.error ? <p role="alert" className="mt-4 text-sm text-danger">{errorText(q.error)}</p> : q.data ? <Versions file={file} versions={q.data.versions} readOnly={trashed} /> : null) : null}
+      {file ? (q.isLoading ? <Loading /> : q.error ? <p role="alert" className="mt-4 text-sm text-danger">{errorText(q.error)}</p> : q.data ? <Versions file={file} versions={q.data.versions} readOnly={trashed} onTimeMachine={onTimeMachine} /> : null) : null}
     </div>
   );
 }

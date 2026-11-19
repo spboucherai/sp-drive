@@ -17,12 +17,15 @@ const Id = z.uuid();
 const FILE_ACTIONS = ['file.uploaded', 'file.version_added', 'file.version_restored', 'file.version_deleted', 'file.renamed', 'file.downloaded', 'folder.created', 'folder.renamed', 'items.moved', 'items.copied',
   'items.trashed', 'items.restored', 'items.purged', 'zip.downloaded', 'share.created', 'share.updated', 'share.revoked', 'share.deleted', 'share.rotated', 'submission.completed', 'scan.infected',
   'collab.member_added', 'collab.member_updated', 'collab.member_removed', 'collab.workspace_named'];
-export interface ActivityRow { id: string; at: Date; action: string; actor_kind: string; actor_user_id: string | null; actor_name: string | null; target_type: string; target_id: string; meta: Record<string, unknown> }
-export const activitySelect = (t: Db) => t`e.id::text, e.at, e.action, e.actor_kind, e.actor_user_id, (select display_name from users x where x.id = e.actor_user_id) as actor_name, e.target_type, e.target_id, e.meta`;
+export interface ActivityRow { id: string; at: Date; action: string; actor_kind: string; actor_user_id: string | null; actor_name: string | null; target_type: string; target_id: string; meta: Record<string, unknown>; target_name?: string | null }
+export const activitySelect = (t: Db) => t`e.id::text, e.at, e.action, e.actor_kind, e.actor_user_id, (select display_name from users x where x.id = e.actor_user_id) as actor_name, e.target_type, e.target_id, e.meta,
+  case e.target_type when 'file' then (select f.name from files f where f.id = nullif(e.target_id, '')::uuid and f.owner_id = e.owner_id)
+    when 'folder' then (select d.name from folders d where d.id = nullif(e.target_id, '')::uuid and d.owner_id = e.owner_id and d.parent_id is not null) end as target_name`;
 export const activityJson = (e: ActivityRow, me: string) => ({
   id: e.id, at: e.at, action: e.action,
   actor: { kind: e.actor_kind, userId: e.actor_user_id, displayName: e.actor_kind === 'system' ? null : e.actor_name, me: e.actor_user_id === me },
-  target: e.target_type ? { type: e.target_type, id: e.target_id } : null, meta: e.meta,
+  // `name` is the present name of a file or folder that still exists (null once purged, for the root, and for other target types)
+  target: e.target_type ? { type: e.target_type, id: e.target_id, name: e.target_name ?? null } : null, meta: e.meta,
 });
 /** Events about one file: aimed at it, or a bulk operation that names it. */
 export const aboutFile = (t: Db, fileId: string) => t`((e.target_type = 'file' and e.target_id = ${fileId}) or e.meta->'fileIds' ? ${fileId} or e.meta->>'fileId' = ${fileId})`;

@@ -184,7 +184,7 @@ function ShareHead({ share, name, icon, sub }: { share: Opened; name: string; ic
   const t = useT();
   return (
     <header className="flex items-start gap-4">
-      <div className="btn-grad flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px]"><Glyph name={icon} size={26} /></div>
+      <div className="btn-grad flex h-14 w-14 shrink-0 items-center justify-center rounded-[12px]"><Glyph name={icon} size={26} /></div>
       <div className="min-w-0 flex-1">
         <h1 className="text-2xl leading-tight font-bold tracking-tight break-words">{name}</h1>
         {share.label && share.label !== name ? <p className="mt-0.5 text-sm break-words text-ink-2">{share.label}</p> : null}
@@ -212,7 +212,7 @@ function FileShare({ token, share, file, fail }: { token: string; share: Opened;
       <section className="card p-5 sm:p-6">
         <ShareHead share={share} name={file.name} icon={KIND_ICON[file.kind] ?? 'file'} sub={formatBytes(file.size, loc)} />
         <button type="button" onClick={open} aria-label={`${t('public.share.preview')} — ${file.name}`}
-          className="press mt-5 flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-[22px] bg-bg ring-1 ring-line ring-inset">
+          className="press mt-5 flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-[14px] bg-bg ring-1 ring-line ring-inset">
           <Thumb src={file.thumb ? src.previewUrl('thumb') : undefined} name={file.name} kind={file.kind} className="h-full w-full rounded-none!" />
         </button>
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
@@ -292,13 +292,13 @@ function FolderShare({ token, share, rootId, fail }: { token: string; share: Ope
             : grid ? (
               <ul className={cx('grid grid-cols-2 gap-3 p-3 sm:grid-cols-3 sm:p-4 lg:grid-cols-4', loading && 'opacity-60')} data-testid="entries">
                 {folders.map((d) => (
-                  <li key={d.id}><button type="button" onClick={() => go(d.id)} className="press flex w-full flex-col overflow-hidden rounded-[18px] bg-bg text-left ring-1 ring-line ring-inset" data-entry="folder">
+                  <li key={d.id}><button type="button" onClick={() => go(d.id)} className="press flex w-full flex-col overflow-hidden rounded-[12px] bg-bg text-left ring-1 ring-line ring-inset" data-entry="folder">
                     <span className="flex aspect-[4/3] w-full items-center justify-center text-accent"><Thumb name={d.name} kind="folder" className="h-14 w-14" /></span>
                     <span className="truncate border-t border-line bg-surface px-3 py-2.5 text-sm font-medium">{d.name}</span>
                   </button></li>
                 ))}
                 {files.map((f, i) => (
-                  <li key={f.id} className="relative overflow-hidden rounded-[18px] bg-bg ring-1 ring-line ring-inset" data-entry="file">
+                  <li key={f.id} className="relative overflow-hidden rounded-[12px] bg-bg ring-1 ring-line ring-inset" data-entry="file">
                     <button type="button" onClick={() => void openFile(i)} aria-label={t('public.share.openItem', { name: f.name })} className="flex w-full flex-col text-left">
                       <span className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden text-ink-3"><Thumb src={f.thumb ? sourceOf(token, f, false).previewUrl('thumb') : undefined} name={f.name} kind={f.kind} className="h-full w-full rounded-none!" /></span>
                       <span className={cx('block w-full border-t border-line bg-surface py-2 pl-3', share.canDownload ? 'pr-11' : 'pr-3')}><span className="block truncate text-sm font-medium">{f.name}</span><span className="block text-xs text-ink-3">{formatBytes(f.size, loc)}</span></span>

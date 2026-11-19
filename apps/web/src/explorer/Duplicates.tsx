@@ -8,11 +8,13 @@ import { fmtDate, getLocale, useT } from '../i18n.ts';
 import { Thumb } from '../preview/Thumb.tsx';
 import { ownerSource } from '../sources.ts';
 import type { FileDetail, FileItem } from '../types.ts';
-import { Badge, Button, EmptyState, ErrorState, IconButton, Loading } from '../ui.tsx';
+import { useFeature } from '../next/meta.ts';
+import type { SimilarGroup } from '../next/types.ts';
+import { Badge, Button, cx, EmptyState, ErrorState, IconButton, Loading } from '../ui.tsx';
 import { pathText } from './Details.tsx';
 import { XKEY } from './lib.ts';
 
-interface Group { sha256: string; size: number; files: FileItem[] }
+interface Group { sha256: string; size: number; distinctNames?: boolean; files: FileItem[] }
 
 /** Where a file lives. One request per folder, whatever the number of copies in it. */
 function Location({ file }: { file: FileItem }) {
@@ -22,7 +24,60 @@ function Location({ file }: { file: FileItem }) {
   return <Link href={q.data.length <= 1 ? '/' : `/folder/${file.folderId}`} className="truncate text-ink-2 underline-offset-2 hover:text-accent hover:underline">{pathText(q.data, t('explorer.root'))}</Link>;
 }
 
-export function Duplicates({ onOpen, onTrash }: { onOpen: (f: FileItem) => void; onTrash: (files: FileItem[]) => void }) {
+/** Pictures that look alike without being the same bytes (resized, re-encoded, converted). Nothing is proposed for deletion in bulk. */
+function Similar({ onOpen, onTrash }: { onOpen: (f: FileItem) => void; onTrash: (files: FileItem[]) => void }) {
+  const t = useT();
+  const loc = getLocale();
+  const [distance, setDistance] = useState(6);
+  const q = useQuery({ queryKey: [XKEY, 'duplicates', 'similar', distance], queryFn: () => get<{ groups: SimilarGroup[] }>(`/duplicates?mode=similar-images&distance=${distance}`), placeholderData: (p) => p });
+  const strict = (
+    <label className="flex flex-wrap items-center gap-2 text-[13px] text-ink-2">{t('next.dup.tolerance')}
+      <select value={distance} onChange={(e) => setDistance(Number(e.target.value))} className="h-9 rounded-[10px] border border-line-strong bg-surface px-2 text-[13px] text-ink">{[2, 6, 10, 14].map((d) => <option key={d} value={d}>{t(`next.dup.tol.${d}`)}</option>)}</select>
+    </label>
+  );
+  if (q.isLoading) return <Loading />;
+  if (q.error || !q.data) return <ErrorState error={q.error} onRetry={() => void q.refetch()} />;
+  if (!q.data.groups.length) return <div className="flex flex-col gap-3">{strict}<EmptyState icon="image" title={t('next.dup.similarNone')} text={t('next.dup.similarNoneText')} /></div>;
+  return (
+    <div className="flex flex-col gap-3" data-testid="similar-groups">
+      <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-[13px] text-ink-2">{t('next.dup.similarSummary', { n: q.data.groups.length })} <span className="text-ink-3">{t('next.dup.similarNote')}</span></p>{strict}</div>
+      {q.data.groups.map((g, gi) => (
+        <section key={gi} aria-label={g.files[0]!.name} className="rounded-[12px] p-3 shadow-(--spd-elevation-e0)" data-testid="similar-group">
+          <p className="mb-2 text-xs text-ink-3">{t('next.dup.images', { n: g.files.length })} · {g.maxDistance === 0 ? t('next.dup.sameLook') : t('next.dup.bits', { n: g.maxDistance })}</p>
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(11rem,1fr))]">
+            {g.files.map((f) => (
+              <li key={f.id} className="min-w-0">
+                <button type="button" onClick={() => onOpen(f)} aria-label={t('explorer.openNamed', { name: f.name })} className="block w-full overflow-hidden rounded-[10px] bg-well shadow-(--spd-elevation-e0)"><Thumb name={f.name} kind={f.kind} className="aspect-[4/3] w-full rounded-none!" src={f.thumb && f.scan !== 'infected' ? ownerSource(f).previewUrl('thumb') : undefined} /></button>
+                <div className="mt-1 flex items-start gap-1">
+                  <div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium text-ink">{f.name}</p><p className="truncate text-xs text-ink-3">{formatBytes(f.size, loc)} · <Location file={f} /></p></div>
+                  <IconButton icon="trash" size={16} className="h-8! w-8!" label={t('explorer.trashNamed', { name: f.name })} onClick={() => onTrash([f])} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+export function Duplicates(p: { onOpen: (f: FileItem) => void; onTrash: (files: FileItem[]) => void }) {
+  const t = useT();
+  const similar = useFeature('similar-images');
+  const [mode, setMode] = useState<'exact' | 'similar'>('exact');
+  return (
+    <div className="flex flex-col gap-4">
+      {similar ? (
+        <div role="tablist" aria-label={t('next.dup.modes')} className="flex w-fit gap-0.5 rounded-[10px] bg-well p-0.5" data-testid="dup-modes">
+          {(['exact', 'similar'] as const).map((k) => <button key={k} type="button" role="tab" aria-selected={mode === k} onClick={() => setMode(k)} className={cx('h-9 rounded-lg px-3 text-[13px] transition-colors sm:h-8', mode === k ? 'bg-surface font-medium text-ink shadow-(--shadow-card)' : 'text-ink-2 hover:text-ink')}>{t(`next.dup.mode.${k}`)}</button>)}
+        </div>
+      ) : null}
+      {mode === 'similar' && similar ? <Similar {...p} /> : <Exact {...p} />}
+    </div>
+  );
+}
+
+function Exact({ onOpen, onTrash }: { onOpen: (f: FileItem) => void; onTrash: (files: FileItem[]) => void }) {
   const t = useT();
   const loc = getLocale();
   const [shown, setShown] = useState(30);
@@ -36,9 +91,10 @@ export function Duplicates({ onOpen, onTrash }: { onOpen: (f: FileItem) => void;
     <div className="flex flex-col gap-3">
       <p className="text-sm text-ink-2">{t('explorer.dup.summary', { n: groups.length, size: formatBytes(extra, loc) })} <span className="text-ink-3">{t('explorer.dup.note')}</span></p>
       {groups.slice(0, shown).map((g) => (
-        <section key={`${g.sha256}:${g.size}`} aria-label={g.files[0]!.name} className="rounded-card border border-line bg-surface" data-testid="dup-group">
+        <section key={`${g.sha256}:${g.size}`} aria-label={g.files[0]!.name} className="overflow-hidden rounded-[12px] shadow-(--spd-elevation-e0)" data-testid="dup-group">
           <header className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
             <Badge tone="accent">{t('explorer.dup.copies', { n: g.files.length })}</Badge>
+            {g.distinctNames ? <span data-testid="distinct-names"><Badge tone="warn">{t('next.dup.distinctNames')}</Badge></span> : null}
             <span className="min-w-0 flex-1 text-sm text-ink-2">{t('explorer.dup.each', { size: formatBytes(g.size, loc) })} · {t('explorer.dup.saved', { size: formatBytes(g.size * (g.files.length - 1), loc) })}</span>
             <Button size="sm" icon="trash" onClick={() => onTrash(g.files.slice(1))}>{t('explorer.dup.trashExtra', { n: g.files.length - 1 })}</Button>
           </header>

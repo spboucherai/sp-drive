@@ -32,6 +32,10 @@ export function describe(n: Notification, t: T): Line {
       const parts = [t('account.notif.placed', { n: num(d.placed) }), num(d.rejected) > 0 ? t('account.notif.rejected', { n: num(d.rejected) }) : '', str(d.ref)].filter(Boolean);
       return { icon: 'inbox', tone: 'accent', title: t('account.notif.submission', { name: who, title: str(d.title) }), text: parts.join(' · '), href: str(d.requestId) ? `/requests/${str(d.requestId)}` : undefined };
     }
+    case 'collab.shared': return { icon: 'users', tone: 'accent', title: t('next.notif.shared', { owner: str(d.ownerName), folder: str(d.folderName) }), text: t(`next.role.${str(d.role) || 'viewer'}`), href: str(d.grantId) ? `/shared/${str(d.grantId)}` : '/shared' };
+    case 'collab.role_changed': return { icon: 'users', tone: 'accent', title: t('next.notif.role', { owner: str(d.ownerName), folder: str(d.folderName) }), text: t(`next.role.${str(d.role) || 'viewer'}`), href: str(d.grantId) ? `/shared/${str(d.grantId)}` : '/shared' };
+    case 'collab.revoked': return { icon: 'users', tone: 'warn', title: t('next.notif.revoked', { owner: str(d.ownerName), folder: str(d.folderName) }), href: '/shared' };
+    case 'collab.upload': return { icon: 'upload', tone: 'accent', title: t('next.notif.upload', { name: str(d.byName) || t('account.notif.someone') }), href: str(d.folderId) ? `/folder/${str(d.folderId)}` : undefined };
     default: return { icon: 'bell', tone: 'accent', title: n.kind };
   }
 }

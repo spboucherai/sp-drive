@@ -150,7 +150,11 @@ const PdfPage = memo(function PdfPage({ doc, n, w, h, top, left, scale, renderSc
 
 type LoadError = { kind: 'password' } | { kind: 'damaged' } | { kind: 'api'; error: unknown };
 
-export function PdfView({ url, source }: { url: string; source: PreviewSource }) {
+const DOC_OPTIONS = { withCredentials: true, disableRange: false, disableStream: false, rangeChunkSize: 262144, enableXfa: false, cMapUrl: 'cmaps/', cMapPacked: true, standardFontDataUrl: 'standard_fonts/', wasmUrl: 'wasm/', useWorkerFetch: false, BinaryDataFactory: BundledData };
+/** Open a PDF with the bundled resources (used by the version comparison, which draws single pages itself). */
+export const openPdf = (url: string) => pdfjs.getDocument({ url, ...DOC_OPTIONS });
+
+export function PdfView({ url, source, initialPage }: { url: string; source: PreviewSource; /** 1-based page to show first (a search hit, a citation) */ initialPage?: number }) {
   const t = useT();
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [error, setError] = useState<LoadError | null>(null);
@@ -161,10 +165,7 @@ export function PdfView({ url, source }: { url: string; source: PreviewSource })
   useEffect(() => {
     let dead = false;
     setDoc(null); setError(null); setProgress(null); setSizes([]);
-    const task = pdfjs.getDocument({
-      url, withCredentials: true, disableRange: false, disableStream: false, rangeChunkSize: 262144, enableXfa: false,
-      cMapUrl: 'cmaps/', cMapPacked: true, standardFontDataUrl: 'standard_fonts/', wasmUrl: 'wasm/', useWorkerFetch: false, BinaryDataFactory: BundledData,
-    });
+    const task = openPdf(url);
     task.onProgress = (p: { loaded: number; total: number }) => { if (!dead && p.total > 0) setProgress(Math.min(1, p.loaded / p.total)); };
     task.promise.then(async (d) => {
       const first = (await d.getPage(1)).getViewport({ scale: 1 });
@@ -199,10 +200,10 @@ export function PdfView({ url, source }: { url: string; source: PreviewSource })
     );
   }
   if (!doc || !sizes.length) return <Busy label={t('common.loading')} text={progress !== null && progress < 1 ? `${Math.round(progress * 100)} %` : undefined} />;
-  return <Pages doc={doc} sizes={sizes} />;
+  return <Pages doc={doc} sizes={sizes} initialPage={initialPage} />;
 }
 
-function Pages({ doc, sizes }: { doc: PDFDocumentProxy; sizes: Size[] }) {
+function Pages({ doc, sizes, initialPage }: { doc: PDFDocumentProxy; sizes: Size[]; initialPage?: number }) {
   const t = useT();
   const count = doc.numPages;
   const scroller = useRef<HTMLDivElement>(null);
@@ -304,6 +305,13 @@ function Pages({ doc, sizes }: { doc: PDFDocumentProxy; sizes: Size[] }) {
     el.scrollTop = Math.max(0, L.tops[p - 1]! + fy * L.h[p - 1]! - (centre ? el.clientHeight / 2 : fy === 0 ? PAD / 2 : 0));
     readAnchor(); update();
   }, [count, readAnchor, update]);
+  // a deep link to a page (search hit, AI citation): go there once the layout exists
+  const jumped = useRef(false);
+  useEffect(() => {
+    if (jumped.current || !doc || count < 1 || !initialPage || initialPage < 2) return;
+    jumped.current = true;
+    setTimeout(() => goTo(initialPage), 60);
+  }, [doc, count, initialPage, goTo]);
 
   // --- search ---
   const [searchOpen, setSearchOpen] = useState(false);

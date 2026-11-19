@@ -24,6 +24,8 @@ Everything is additive. A 1.0 client keeps working unchanged against a 2.0 serve
 | D12 | `duplicates?mode=similar-images` | optional `distance=0..16` (default 6) | |
 | D13 | change feed | when the **thumbnail** of a content becomes ready, every live file whose current version is that content gets a new `rev` (nothing else changes in the row): `GET /sync/changes` returns it with `thumb: true` and a `change` event is sent | a client that mirrored the file before the worker ran kept `thumb: false` for ever. Text extraction becoming ready does **not** bump `rev` (`GET /files/:id/text` is polled by whoever shows it) |
 | D14 | rate limits | the per-address limit (900 requests / minute) no longer counts the **chunk traffic of resumable uploads** — `PATCH` and `GET` of `/uploads/:id` and `/shared/:grantId/uploads/:id` — when the request carries a cookie or a well-formed bearer. Those requests have their own budget: **6000 / minute per account** (`429 rate_limited` with `retryAfterS` beyond). A cookie or bearer that is not a live session gets 120 such requests / minute per address; without any credential the ordinary per-address limit applies. `POST /uploads`, `…/complete`, authentication and public routes are unchanged | 6–8 parallel uploads of large files from one native client made thousands of chunk requests a minute and tripped the address limit |
+| D15 | `GET /files/:id/text` | where the antivirus is optional and absent (`SPD_AV_MODE=optional`, development stacks), a file whose scan was skipped answers `pending` until its extraction ran — it used to answer `unsupported` for a moment, and a client that stops polling on `unsupported` never saw the text arrive | found by the web inspector |
+| D16 | activity events | `target` gains **`name`** (see §7.2) | an activity screen could not name what an event was about without one request per line |
 
 ## 1. Conventions (unchanged from 1.0)
 
@@ -400,11 +402,13 @@ A collection always selects among the caller's own live files; it references fil
 ```json
 { "events": [{ "id": "5", "at": "2026-11-19T18:44:54.900Z", "action": "file.uploaded",
                "actor": { "kind": "user", "userId": "1f6c3c04-…", "displayName": "Alice Tremblay", "me": true },
-               "target": { "type": "file", "id": "5c8a03c4-…" }, "meta": { "size": 740 } }],
+               "target": { "type": "file", "id": "5c8a03c4-…", "name": "Rapport trimestriel.pdf" }, "meta": { "size": 740 } }],
   "more": false }
 ```
 Newest first. Page with `before=<id of the last event received>` while `more` is true. `actor.kind` ∈
 `user | anonymous | system` (`displayName` is `null` for `system`); `target` may be `null`.
+`target.name` (added for the web activity screens) is the **present** name of a file or folder that still exists in the
+account — `null` once it was purged, for the root folder, and for every other target type (share, submission, object).
 
 | action | target | meta |
 |---|---|---|

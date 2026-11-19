@@ -133,6 +133,7 @@ describe('activity', () => {
     expect(act.events.map((e: any) => e.action).reverse()).toEqual(['file.uploaded', 'file.renamed', 'items.moved', 'file.downloaded', 'file.version_added', 'file.version_restored', 'share.created', 'items.trashed', 'items.restored']);
     expect(act.more).toBe(false);
     const renamed = act.events.find((e: any) => e.action === 'file.renamed');
+    expect(renamed.target).toEqual({ type: 'file', id: f.id, name: 'journal de bord.txt' }); // the present name, so a feed can be read without one request per line
     expect(renamed).toMatchObject({ actor: { kind: 'user', userId: u.userId, me: true, displayName: expect.any(String) }, target: { type: 'file', id: f.id }, meta: { from: 'journal.txt' } });
     expect(act.events.find((e: any) => e.action === 'items.moved').meta).toMatchObject({ files: 2, destinationId: d.id });
     expect(act.events.find((e: any) => e.action === 'file.version_restored').meta).toEqual({ from: 1 });

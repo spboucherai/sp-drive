@@ -35,6 +35,12 @@ const P: Record<string, string> = {
   expandAll: 'M7 9l5-5 5 5M7 15l5 5 5-5', collapseAll: 'M7 4l5 5 5-5M7 20l5-5 5 5',
   pdf: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M8.5 17.5c2-1.5 3.5-4.5 3.5-7 0 3 2 5.5 4 6-2.5 0-5.5.3-7.5 1z', doc: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M8.5 12.5h7M8.5 15.5h7M8.5 18.500h4',
   filter: 'M4 6h16M7 12h10M10 18h4',
+  chart: 'M4 20V10M10 20V4M16 20v-7M22 20H2', canvas: 'M3 5h7v6H3zM14 4h7v4h-7zM13 12h8v8h-8zM4 15h5v5H4z', bolt: 'M13 3L5 13h6l-1 8 8-10h-6z',
+  panel: 'M4 5h16v14H4zM14 5v14', arrowRight: 'M5 12h14M13 6l6 6-6 6', swap: 'M7 4v16M4 7l3-3 3 3M17 20V4M14 17l3 3 3-3', compare: 'M12 3v18M4 6h5v12H4zM15 6h5v12h-5z',
+  collection: 'M5 4h14v4H5zM3 10h18v4H3zM5 16h14v4H5z', wand: 'M5 19L16 8M14 6l1-3 1 3 3 1-3 1-1 3-1-3-3-1zM6 6l.6 1.900L8.500 8.500l-1.900.6L6 11l-.6-1.900L3.500 8.500l1.900-.6z', send: 'M4 12l16-8-6 16-3-7z',
+  stop: 'M7 7h10v10H7z', layers: 'M12 3l9 5-9 5-9-5zM3 13l9 5 9-5M3 17l9 5 9-5', hash: 'M9 4L7 20M17 4l-2 16M4 9h17M3 15h17', mail: 'M4 6h16v12H4zM4 7l8 6 8-6',
+  cloud: 'M7 18a4 4 0 0 1-.6-7.960A5.500 5.500 0 0 1 17 9a4.500 4.500 0 0 1 .5 9z', database: 'M5 6c0-1.700 3.100-3 7-3s7 1.300 7 3-3.100 3-7 3-7-1.300-7-3zM5 6v12c0 1.700 3.100 3 7 3s7-1.300 7-3V6M5 12c0 1.700 3.100 3 7 3s7-1.300 7-3',
+  phone: 'M8 3h8a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM11 18h2', tablet: 'M5 3h14v18H5zM11 18h2', quote: 'M6 17c2-1 3-3 3-6V7H5v5h3M15 17c2-1 3-3 3-6V7h-4v5h3',
   sparkle: 'M12 3l1.900 5.100L19 10l-5.100 1.900L12 17l-1.900-5.100L5 10l5.100-1.900zM19 16l.8 2.200L22 19l-2.200.8L19 22l-.8-2.200L16 19l2.200-.8z',
 };
 export type GlyphName = keyof typeof P;

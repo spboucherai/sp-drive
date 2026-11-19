@@ -9,6 +9,8 @@ PG=/opt/homebrew/opt/postgresql@17/bin
 $PG/createdb -h 127.0.0.1 sp_drive_dev 2>/dev/null || true
 mkdir -p .dev
 source scripts/dev-env.sh
+# LibreOffice held by a pending first-launch approval hangs for ever: use the copy when there is one (as scripts/ci.sh does)
+[[ -z "${SPD_SOFFICE:-}" && -x /Users/Shared/sp-drive-tools/LibreOffice.app/Contents/MacOS/soffice ]] && export SPD_SOFFICE=/Users/Shared/sp-drive-tools/LibreOffice.app/Contents/MacOS/soffice
 [[ -f .dev/master.key ]] || pnpm -s exec tsx services/api/src/cli.ts init-key
 # Stop a previous run by PID file (never by name pattern: the node is shared with other stacks).
 stop() { for f in .dev/api.pid .dev/web.pid; do [[ -f $f ]] && kill "$(cat $f)" 2>/dev/null || true; rm -f $f; done; }

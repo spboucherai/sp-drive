@@ -14,6 +14,8 @@ export interface UploadItem {
   key: number; batch: number; file: File; name: string; size: number; folderId: string; relativePath?: string;
   /** Set when the upload is a new version of a known file. */
   fileId?: string;
+  /** Set when the file goes into a folder shared with this account (member routes; the bytes count on the owner's quota). */
+  grantId?: string;
   uploadId?: string; sent: number; state: UpState; error?: unknown; speed: number;
   /** Bytes the server already held when an earlier session was continued (0 = started from scratch). */
   resumedFrom: number;
@@ -24,6 +26,8 @@ export interface Pending { uploadId: string; name: string; size: number; lastMod
 export interface Snapshot { items: UploadItem[]; pending: Pending[]; batchSizes: Record<number, number> }
 
 const PARALLEL = 3;
+/** Owner uploads and uploads through a grant speak the same protocol on two route families. */
+const base = (it: { grantId?: string }) => (it.grantId ? `/shared/${it.grantId}/uploads` : '/uploads');
 const STORE = 'spd.uploads.pending';
 const ACTIVE: UpState[] = ['queued', 'uploading', 'finishing', 'conflict'];
 
@@ -56,7 +60,7 @@ function set(key: number, p: Partial<UploadItem>): void { items = items.map((i) 
 let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 function refresh(): void { // several files finishing together refresh the listing once
   clearTimeout(refreshTimer);
-  refreshTimer = setTimeout(() => { void client?.invalidateQueries({ queryKey: [XKEY] }); void client?.invalidateQueries({ queryKey: AUTH_KEY }); }, 250);
+  refreshTimer = setTimeout(() => { void client?.invalidateQueries({ queryKey: [XKEY] }); void client?.invalidateQueries({ queryKey: ['next'] }); void client?.invalidateQueries({ queryKey: AUTH_KEY }); }, 250);
 }
 const isAbort = (e: unknown) => (e as Error)?.name === 'AbortError';
 const refused = (e: unknown) => e instanceof ApiError && e.status >= 400 && e.status < 500;
@@ -76,13 +80,13 @@ async function run(key: number): Promise<void> {
     const it = find(key)!;
     set(key, { state: 'uploading', error: undefined, speed: 0 });
     let uploadId = it.uploadId, startAt = 0;
-    if (!uploadId && !it.fileId) { // the same file was being sent before a reload: continue that session
+    if (!uploadId && !it.fileId && !it.grantId) { // the same file was being sent before a reload: continue that session
       const p = loadPending().find((x) => x.name === it.name && x.size === it.size && x.lastModified === it.file.lastModified && x.folderId === it.folderId && (x.relativePath ?? '') === (it.relativePath ?? '') && !items.some((o) => o.uploadId === x.uploadId));
       if (p) uploadId = p.uploadId;
     }
     if (uploadId) {
       try {
-        const s = await get<UploadState>(`/uploads/${uploadId}`, { signal });
+        const s = await get<UploadState>(`${base(it)}/${uploadId}`, { signal });
         if (s.status === 'done') { set(key, { uploadId, state: 'done', sent: it.size }); dropPending(uploadId); refresh(); return; }
         if (s.status !== 'active' || s.size !== it.size) throw new ApiError(410, 'upload_closed', 'closed');
         startAt = s.received;
@@ -93,14 +97,16 @@ async function run(key: number): Promise<void> {
       }
     }
     if (!uploadId) {
-      const s = await post<UploadState>('/uploads', { folderId: it.folderId, name: it.name, size: it.size, relativePath: it.relativePath, onConflict: 'fail', fileId: it.fileId }, { signal });
+      const s = it.grantId
+        ? await post<UploadState>(base(it), { folderId: it.folderId || undefined, name: it.name, size: it.size, relativePath: it.relativePath, onConflict: 'rename' }, { signal })
+        : await post<UploadState>('/uploads', { folderId: it.folderId, name: it.name, size: it.size, relativePath: it.relativePath, onConflict: 'fail', fileId: it.fileId }, { signal });
       uploadId = s.id;
       set(key, { uploadId });
-      if (!it.fileId) savePending([...loadPending(), { uploadId, name: it.name, size: it.size, lastModified: it.file.lastModified, folderId: it.folderId, relativePath: it.relativePath }]);
+      if (!it.fileId && !it.grantId) savePending([...loadPending(), { uploadId, name: it.name, size: it.size, lastModified: it.file.lastModified, folderId: it.folderId, relativePath: it.relativePath }]);
     }
     const t0 = performance.now(), from = startAt;
     await transfer({
-      file: it.file, startAt, signal, chunkPath: (o) => `/uploads/${uploadId}?offset=${o}`, statusPath: `/uploads/${uploadId}`,
+      file: it.file, startAt, signal, chunkPath: (o) => `${base(it)}/${uploadId}?offset=${o}`, statusPath: `${base(it)}/${uploadId}`,
       onProgress: (sent) => { const dt = (performance.now() - t0) / 1000; set(key, { sent, speed: dt > 0.2 && sent > from ? (sent - from) / dt : 0 }); },
     });
     await finish(key);
@@ -121,12 +127,12 @@ async function finish(key: number): Promise<void> {
   if (!hashes.has(it.file)) hashes.set(it.file, wholeFileSha(it.file));
   const sha256 = await hashes.get(it.file);
   try {
-    const r = await post<UploadState & { file: FileItem; created?: boolean }>(`/uploads/${it.uploadId}/complete`, sha256 ? { sha256 } : {});
+    const r = await post<UploadState & { file: FileItem; created?: boolean }>(`${base(it)}/${it.uploadId}/complete`, sha256 ? { sha256 } : {});
     dropPending(it.uploadId);
     if (find(key)) set(key, { state: 'done', result: r.file, created: r.created });
     refresh();
   } catch (e) {
-    if (!(e instanceof ApiError) || e.code !== 'name_conflict' || it.fileId || it.decided) throw e;
+    if (!(e instanceof ApiError) || e.code !== 'name_conflict' || it.fileId || it.grantId || it.decided) throw e;
     const rule = decisions.get(it.batch);
     if (rule) return decide(key, rule);
     set(key, { state: 'conflict' });
@@ -137,7 +143,7 @@ async function decide(key: number, d: Decision): Promise<void> {
   if (!it?.uploadId) return;
   try {
     if (d === 'skip') {
-      await del(`/uploads/${it.uploadId}`).catch((e) => { if (!refused(e)) throw e; });
+      await del(`${base(it)}/${it.uploadId}`).catch((e) => { if (!refused(e)) throw e; });
       dropPending(it.uploadId);
       set(key, { state: 'skipped', decided: d });
       return;
@@ -151,10 +157,10 @@ async function decide(key: number, d: Decision): Promise<void> {
 export const uploads = {
   /** Called once by the explorer so finished files refresh the listings. */
   bind(qc: QueryClient): void { client = qc; },
-  enqueue(picked: Picked[], folderId: string, o: { fileId?: string } = {}): void {
+  enqueue(picked: Picked[], folderId: string, o: { fileId?: string; grantId?: string } = {}): void {
     if (!picked.length) return;
     const batch = ++batchSeq;
-    items = [...items, ...picked.map((p): UploadItem => ({ key: ++seq, batch, file: p.file, name: p.file.name, size: p.file.size, folderId, relativePath: p.relativePath, fileId: o.fileId, sent: 0, state: 'queued', speed: 0, resumedFrom: 0 }))];
+    items = [...items, ...picked.map((p): UploadItem => ({ key: ++seq, batch, file: p.file, name: p.file.name, size: p.file.size, folderId, relativePath: p.relativePath, fileId: o.fileId, grantId: o.grantId, sent: 0, state: 'queued', speed: 0, resumedFrom: 0 }))];
     emit(); pump();
   },
   pause(key: number): void {
@@ -175,7 +181,7 @@ export const uploads = {
     if (!it) return;
     ctrls.get(key)?.abort();
     items = items.filter((i) => i.key !== key);
-    if (it.uploadId && it.state !== 'done' && it.state !== 'skipped') { dropPending(it.uploadId); void del(`/uploads/${it.uploadId}`).catch(() => {}); }
+    if (it.uploadId && it.state !== 'done' && it.state !== 'skipped') { dropPending(it.uploadId); void del(`${base(it)}/${it.uploadId}`).catch(() => {}); }
     emit(); pump();
   },
   /** Answer a name collision; `all` applies the same answer to every collision of the batch, present and to come. */

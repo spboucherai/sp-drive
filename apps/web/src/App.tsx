@@ -11,6 +11,13 @@ const Requests = lazy(() => import('./screens/Requests.tsx').then((m) => ({ defa
 const RequestDetail = lazy(() => import('./screens/RequestDetail.tsx').then((m) => ({ default: m.RequestDetail })));
 const Settings = lazy(() => import('./screens/Settings.tsx').then((m) => ({ default: m.Settings })));
 const Admin = lazy(() => import('./screens/Admin.tsx').then((m) => ({ default: m.Admin })));
+const SharedScreen = lazy(() => import('./next/Shared.tsx').then((m) => ({ default: m.SharedScreen })));
+const SharedBrowser = lazy(() => import('./next/Shared.tsx').then((m) => ({ default: m.SharedBrowser })));
+const CollectionScreen = lazy(() => import('./next/Collections.tsx').then((m) => ({ default: m.CollectionScreen })));
+const ActivityScreen = lazy(() => import('./next/Activity.tsx').then((m) => ({ default: m.ActivityScreen })));
+const StorageScreen = lazy(() => import('./next/Storage.tsx').then((m) => ({ default: m.StorageScreen })));
+const AskScreen = lazy(() => import('./next/ai/Ask.tsx').then((m) => ({ default: m.AskScreen })));
+const OpenFile = lazy(() => import('./next/Open.tsx').then((m) => ({ default: m.OpenFile })));
 const Login = lazy(() => import('./screens/Login.tsx').then((m) => ({ default: m.Login })));
 const Invite = lazy(() => import('./screens/Invite.tsx').then((m) => ({ default: m.Invite })));
 const LinkDevice = lazy(() => import('./screens/LinkDevice.tsx').then((m) => ({ default: m.LinkDevice })));
@@ -29,6 +36,7 @@ function Private() {
   if (state.recovery) return <Redirect to="/recovery" />; // a recovery session can only enrol a passkey
   return (
     <Shell>
+      <Suspense fallback={<Loading />}>
       <Switch>
         <Route path="/"><Explorer view="folder" folderId="root" /></Route>
         <Route path="/folder/:id">{(p) => <Explorer view="folder" folderId={p.id} />}</Route>
@@ -38,12 +46,20 @@ function Private() {
         <Route path="/search"><Explorer view="search" /></Route>
         <Route path="/duplicates"><Explorer view="duplicates" /></Route>
         <Route path="/shares"><Shares /></Route>
+        <Route path="/shared"><SharedScreen /></Route>
+        <Route path="/shared/:grantId/:folderId?">{(p) => <SharedBrowser key={`${p.grantId}:${p.folderId ?? ''}`} grantId={p.grantId} folderId={p.folderId} />}</Route>
+        <Route path="/collections/:id">{(p) => <CollectionScreen key={p.id} id={p.id} />}</Route>
+        <Route path="/activity"><ActivityScreen /></Route>
+        <Route path="/storage"><StorageScreen /></Route>
+        <Route path="/ask"><AskScreen /></Route>
+        <Route path="/open/:id">{(p) => <OpenFile id={p.id} />}</Route>
         <Route path="/requests"><Requests /></Route>
         <Route path="/requests/:id">{(p) => <RequestDetail id={p.id} />}</Route>
         <Route path="/settings/:tab?">{(p) => <Settings tab={p.tab} />}</Route>
         <Route path="/admin">{state.user?.role === 'admin' ? <Admin /> : <Redirect to="/" />}</Route>
         <Route><ErrorState error={{ code: 'not_found' }} onRetry={() => navigate('/')} /></Route>
       </Switch>
+      </Suspense>
     </Shell>
   );
 }

@@ -4,6 +4,8 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
+import { config } from '../src/config.ts';
+import { sql } from '../src/db.ts';
 import { UPLOAD_CHUNKS_BAD_CREDENTIAL_PER_MIN } from '../src/server.ts';
 import { closeAll, server, signup, work } from './harness.ts';
 
@@ -68,5 +70,23 @@ describe('upload chunk requests have their own budget', () => {
     for (let i = 0; i < 905; i++) { last = await inject({ method: 'GET', url, ip: '10.44.0.3' }); if (last === 429 && first429 < 0) first429 = i; }
     expect(first429).toBe(900);
     expect(last).toBe(429);
+  });
+});
+
+describe('text status while the extraction is queued without an antivirus', () => {
+  it('says "pending", not "unsupported", between the skipped scan and the extraction (optional antivirus mode)', async () => {
+    const a = await signup();
+    const f = (await a.client.upload(a.rootId, 'note.txt', Buffer.from('bonjour'))).body.file;
+    const status = async () => (await a.client.get(`/api/v1/files/${f.id}/text`)).body.status;
+    expect(await status()).toBe('pending'); // waiting for the scan
+    // the state the worker leaves when clamd is absent and SPD_AV_MODE=optional, before the extraction job has run
+    await sql`update storage_objects set scan_status = 'error', scan_detail = 'scanner_unavailable' where id = (select object_id from file_versions where id = ${f.versionId})`;
+    const mode = config.avMode;
+    try {
+      config.avMode = 'optional';
+      expect(await status()).toBe('pending');
+      config.avMode = 'required'; // a scan that failed for good where the antivirus is mandatory: never indexed
+      expect(await status()).toBe('unsupported');
+    } finally { config.avMode = mode; }
   });
 });
