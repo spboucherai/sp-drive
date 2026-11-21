@@ -1,3 +1,18 @@
+/**
+ * =============================================================================
+ * SP BOUCHER | SOURCE FILE
+ * =============================================================================
+ * Project      : SP Drive
+ * File         : apps/web/src/preview/preview.css
+ * Author       : Simon-Pierre Boucher | https://spboucher.ai
+ * Contact      : support@spboucher.ai
+ * Copyright    : (c) 2026 Simon-Pierre Boucher
+ * License      : None specified (no license file in this repository)
+ * =============================================================================
+ * END OF SP BOUCHER SOURCE HEADER
+ * =============================================================================
+ */
+
 /* Styles of the preview viewer that utilities cannot express: kind colours, text lines, Markdown prose, pdf.js text layer. */
 
 /* --- icon tiles: one colour per family, tuned for both themes --- */
